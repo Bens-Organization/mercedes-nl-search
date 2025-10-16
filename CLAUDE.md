@@ -4,7 +4,26 @@ This file provides context for AI assistants (like Claude) working on this codeb
 
 ## Project Overview
 
-**Mercedes Scientific Natural Language Search** is a production-ready search system that enables users to search through 34,000+ medical and scientific products using natural language queries.
+**Mercedes Scientific Natural Language Search** is a **production-deployed** search system that enables users to search through 34,000+ medical and scientific products using natural language queries.
+
+## Production Deployment
+
+**Status**: ✅ **LIVE IN PRODUCTION**
+
+**Stack**:
+- **Frontend**: Vercel (https://mercedes-nl-search.vercel.app)
+- **Backend API**: Render (https://mercedes-search-api.onrender.com)
+- **Search Engine**: Typesense Cloud (8GB cluster)
+- **Database**: Neon PostgreSQL (free tier)
+- **AI Services**: OpenAI (GPT-4o-mini + text-embedding-3-small)
+
+**Infrastructure**:
+- 34,607 products indexed with semantic embeddings
+- ~700MB memory usage (embeddings + data)
+- Natural language model registered and active
+- CORS configured for production frontend
+
+**Documentation**: See `/docs` directory for deployment guides
 
 **Two Indexing Options**:
 1. **Neon Database Indexer** (RECOMMENDED): Direct access to 34,000+ products from Neon PostgreSQL database
