@@ -23,7 +23,7 @@ This file provides context for AI assistants (like Claude) working on this codeb
 - Natural language model registered and active
 - CORS configured for production frontend
 
-**Documentation**: See `/docs` directory for deployment guides
+**Documentation**: See `DEPLOYMENT.md` for deployment guide
 
 **Two Indexing Options**:
 1. **Neon Database Indexer** (RECOMMENDED): Direct access to 34,000+ products from Neon PostgreSQL database
