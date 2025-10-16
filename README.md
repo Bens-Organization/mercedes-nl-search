@@ -14,7 +14,7 @@ AI-powered natural language search for Mercedes Scientific products using **Hybr
 
 **Deployed Stack**: 34,607 products indexed with full semantic search capabilities.
 
-For deployment guides, see the [`/docs/deployment`](/docs/deployment) directory.
+For deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Features
 
@@ -443,10 +443,6 @@ mercedes-natural-language-search/
 │   ├── setup_nl_model.py     # Natural language model setup
 │   ├── config.py             # Configuration management
 │   └── models.py             # Pydantic data models
-├── docs/                      # Documentation
-│   ├── deployment/           # Deployment guides
-│   ├── reference/            # Reference docs
-│   └── architecture/         # Architecture docs
 ├── tests/                     # Test files
 ├── database/                  # Exported product data
 ├── frontend-next/            # Next.js frontend
@@ -457,6 +453,7 @@ mercedes-natural-language-search/
 ├── .env.example             # Environment variables template
 ├── start-ui.sh              # Quick frontend starter script
 ├── README.md                # This file
+├── DEPLOYMENT.md            # Deployment guide
 └── CLAUDE.md                # AI assistant context
 ```
 
@@ -660,21 +657,12 @@ Contributions welcome! Please:
 
 ## Deployment
 
-This project is deployed in production. For deployment guides:
-
-- **Quick Start**: See [`/docs/deployment/DEPLOYMENT_QUICKSTART.md`](/docs/deployment/DEPLOYMENT_QUICKSTART.md)
-- **Full Guide**: See [`/docs/deployment/DEPLOYMENT.md`](/docs/deployment/DEPLOYMENT.md)
-- **Environment Setup**: See [`/docs/deployment/ENV_SETUP.md`](/docs/deployment/ENV_SETUP.md)
-- **Typesense Cloud**: See [`/docs/deployment/TYPESENSE_CLOUD_SETUP.md`](/docs/deployment/TYPESENSE_CLOUD_SETUP.md)
-
-## Documentation
-
-All documentation is organized in the `/docs` directory:
-
-- **Deployment Guides**: `/docs/deployment/` - Production deployment instructions
-- **Reference Docs**: `/docs/reference/` - Alternative setups and scaling strategies
-- **Architecture**: `/docs/architecture/` - Technical deep-dives
-- **AI Assistant Context**: `CLAUDE.md` - Context for AI assistants working on this codebase
+This project is deployed in production. See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment instructions including:
+- Environment variables setup
+- Backend deployment (Render)
+- Frontend deployment (Vercel)
+- Typesense configuration
+- Troubleshooting guide
 
 ## Roadmap
 
