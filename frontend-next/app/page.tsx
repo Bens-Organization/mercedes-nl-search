@@ -68,19 +68,36 @@ export default function Home() {
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-      const response = await fetch(`${apiUrl}/api/search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: searchQuery,
-          max_results: 20 * pageNum,
-        }),
-      });
+      let response;
+
+      try {
+        response = await fetch(`${apiUrl}/api/search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: searchQuery,
+            max_results: 20 * pageNum,
+          }),
+        });
+      } catch (fetchError) {
+        // Network error - couldn't reach the server at all
+        throw new Error('Cannot reach Journey AI. Please check your connection.');
+      }
 
       if (!response.ok) {
-        throw new Error('Search failed');
+        const errorData = await response.json().catch(() => ({}));
+
+        if (response.status === 503) {
+          throw new Error('Journey AI is currently unavailable. Please try again later.');
+        } else if (response.status === 500) {
+          throw new Error(errorData.message || 'Search service error. Please try again.');
+        } else if (response.status >= 400 && response.status < 500) {
+          throw new Error(errorData.error || 'Invalid search request');
+        } else {
+          throw new Error('Search failed. Please try again.');
+        }
       }
 
       const data = await response.json();
@@ -95,7 +112,7 @@ export default function Home() {
 
       setHasMore(newResults.length < data.total);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       if (!append) {
         setResults([]);
         setStats(null);
@@ -227,9 +244,6 @@ export default function Home() {
       {error && (
         <div className="text-center py-12">
           <p className="text-red-600 font-semibold mb-2">{error}</p>
-          <p className="text-xs text-gray-600">
-            Unable to connect to the API server. Please try again.
-          </p>
         </div>
       )}
 

@@ -187,6 +187,21 @@ class NaturalLanguageSearch:
 
             return results
 
+        except typesense.exceptions.RequestUnauthorized:
+            print("Error: Typesense authentication failed")
+            raise Exception("Search service authentication failed")
+        except typesense.exceptions.HTTPStatus0Error as e:
+            print(f"Error: Cannot connect to Typesense: {e}")
+            raise Exception("Search service is temporarily unavailable")
+        except typesense.exceptions.ServiceUnavailable as e:
+            print(f"Error: Typesense service unavailable: {e}")
+            raise Exception("Search service is temporarily unavailable")
+        except typesense.exceptions.ServerError as e:
+            print(f"Error: Typesense server error: {e}")
+            raise Exception("Search service is temporarily unavailable")
+        except typesense.exceptions.TypesenseClientError as e:
+            print(f"Error: Typesense client error: {e}")
+            raise Exception(f"Search service error: {str(e)}")
         except Exception as e:
             print(f"Error executing Typesense NL search: {e}")
 
@@ -202,9 +217,15 @@ class NaturalLanguageSearch:
                 )
                 print("  Fallback: Using keyword-only search (NL search failed)")
                 return results
+            except typesense.exceptions.HTTPStatus0Error as e2:
+                print(f"Error in fallback search - connection failed: {e2}")
+                raise Exception("Search service is temporarily unavailable")
+            except typesense.exceptions.ServiceUnavailable as e2:
+                print(f"Error in fallback search - service unavailable: {e2}")
+                raise Exception("Search service is temporarily unavailable")
             except Exception as e2:
                 print(f"Error in fallback search: {e2}")
-                return {"hits": [], "found": 0}
+                raise Exception("Search service is temporarily unavailable")
 
     def _transform_results(self, hits: List[Dict[str, Any]]) -> List[Product]:
         """
@@ -366,8 +387,21 @@ class NaturalLanguageSearch:
 
             return self._transform_results(results.get("hits", []))
 
+        except typesense.exceptions.RequestUnauthorized:
+            print("Error: Typesense authentication failed in search without category")
+            raise Exception("Search service authentication failed")
+        except typesense.exceptions.HTTPStatus0Error as e:
+            print(f"Error: Connection failed in search without category: {e}")
+            raise Exception("Search service is temporarily unavailable")
+        except typesense.exceptions.ServiceUnavailable as e:
+            print(f"Error: Service unavailable in search without category: {e}")
+            raise Exception("Search service is temporarily unavailable")
+        except typesense.exceptions.ServerError as e:
+            print(f"Error: Typesense server error in search without category: {e}")
+            raise Exception("Search service is temporarily unavailable")
         except Exception as e:
             print(f"Error in search without category: {e}")
+            # For additional results, we can return empty list as it's not critical
             return []
 
 

@@ -43,7 +43,25 @@ def home():
 @app.route("/health")
 def health():
     """Health check for monitoring."""
-    return jsonify({"status": "healthy"})
+    try:
+        # Try to retrieve collections to verify Typesense connection
+        collections = search_engine.typesense_client.collections.retrieve()
+        return jsonify({
+            "status": "healthy",
+            "services": {
+                "api": "ok",
+                "typesense": "ok"
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "services": {
+                "api": "ok",
+                "typesense": "error"
+            },
+            "error": str(e)
+        }), 503
 
 
 @app.route("/api/search", methods=["POST"])
@@ -91,10 +109,25 @@ def search():
 
     except Exception as e:
         traceback.print_exc()
-        return jsonify({
-            "error": str(e),
-            "message": "An error occurred while processing your search"
-        }), 500
+
+        # Distinguish between different error types
+        error_message = str(e)
+
+        if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
+            return jsonify({
+                "error": error_message,
+                "message": "Search service is currently unavailable"
+            }), 503  # Service Unavailable
+        elif "authentication" in error_message.lower():
+            return jsonify({
+                "error": "Configuration error",
+                "message": "Search service configuration error"
+            }), 500
+        else:
+            return jsonify({
+                "error": error_message,
+                "message": "An error occurred while processing your search"
+            }), 500
 
 
 @app.route("/api/search", methods=["GET"])
@@ -127,10 +160,25 @@ def search_get():
 
     except Exception as e:
         traceback.print_exc()
-        return jsonify({
-            "error": str(e),
-            "message": "An error occurred while processing your search"
-        }), 500
+
+        # Distinguish between different error types
+        error_message = str(e)
+
+        if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
+            return jsonify({
+                "error": error_message,
+                "message": "Search service is currently unavailable"
+            }), 503  # Service Unavailable
+        elif "authentication" in error_message.lower():
+            return jsonify({
+                "error": "Configuration error",
+                "message": "Search service configuration error"
+            }), 500
+        else:
+            return jsonify({
+                "error": error_message,
+                "message": "An error occurred while processing your search"
+            }), 500
 
 
 @app.errorhandler(404)
