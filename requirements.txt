@@ -1,0 +1,27 @@
+# Core Dependencies
+flask>=3.0.0
+flask-cors>=4.0.0
+python-dotenv>=1.0.0
+
+# Typesense Client
+typesense>=0.21.0
+
+# OpenAI
+openai>=1.12.0
+
+# GraphQL Client
+gql>=3.5.0
+requests-toolbelt>=1.0.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# Data Processing (Python 3.13 compatible)
+pydantic>=2.10.0
+
+# PostgreSQL (for Neon database)
+psycopg2-binary>=2.9.9
+
+# Development
+black>=24.1.1
+pytest>=7.4.4

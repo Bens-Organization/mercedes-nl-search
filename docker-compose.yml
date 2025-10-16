@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  typesense:
+    image: typesense/typesense:29.0
+    container_name: mercedes-typesense
+    ports:
+      - "8108:8108"
+    volumes:
+      - ./typesense-data:/data
+    environment:
+      - TYPESENSE_DATA_DIR=/data
+      - TYPESENSE_API_KEY=xyz
+    command: '--data-dir /data --api-key=xyz --enable-cors'
+    restart: unless-stopped
+
+networks:
+  default:
+    name: mercedes-network

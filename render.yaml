@@ -1,0 +1,34 @@
+# Render Blueprint for Mercedes Scientific NL Search
+# This file enables one-click deployment to Render
+# See: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: mercedes-search-api
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python src/app.py
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_PORT
+        value: 5001
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini-2024-07-18
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      # These must be added manually via Render dashboard (secrets):
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TYPESENSE_API_KEY
+        sync: false
+      - key: TYPESENSE_HOST
+        sync: false
+      - key: TYPESENSE_PORT
+        value: 443
+      - key: TYPESENSE_PROTOCOL
+        value: https
+      - key: NEON_DATABASE_URL
+        sync: false
