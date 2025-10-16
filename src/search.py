@@ -16,8 +16,8 @@ class NaturalLanguageSearch:
         """Initialize search engine."""
         self.typesense_client = typesense.Client(Config.get_typesense_config())
         self.collection_name = Config.TYPESENSE_COLLECTION_NAME
-        # Use the UUID of the model with category extraction (latest model)
-        self.nl_model_id = "e56b8cdc-90a8-4fe6-a1f0-f9507c64fa7a"
+        # Use the registered NL model ID
+        self.nl_model_id = "openai-gpt4o-mini"
 
     def search(self, query: str, max_results: int = 20, debug: bool = False,
                confidence_threshold: float = 0.80) -> SearchResponse:
