@@ -67,7 +67,8 @@ export default function Home() {
     setQuery(searchQuery);
 
     try {
-      const response = await fetch('http://localhost:5001/api/search', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const response = await fetch(`${apiUrl}/api/search`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -227,7 +228,7 @@ export default function Home() {
         <div className="text-center py-12">
           <p className="text-red-600 font-semibold mb-2">{error}</p>
           <p className="text-xs text-gray-600">
-            Make sure the API server is running on http://localhost:5001
+            Unable to connect to the API server. Please try again.
           </p>
         </div>
       )}
@@ -255,7 +256,7 @@ export default function Home() {
                     Loading...
                   </>
                 ) : (
-                  `Load More (${(stats.total - results.length).toLocaleString()} remaining)`
+                  `Load More (${stats ? (stats.total - results.length).toLocaleString() : '0'} remaining)`
                 )}
               </button>
             ) : (
