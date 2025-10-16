@@ -61,6 +61,7 @@ SORT FIELD ("sort_by"):
 - "most expensive" or "highest price" → price:desc
 - "latest" or "newest" → created_at:desc
 - "recently updated" → updated_at:desc
+- "popular" or "most popular" or "best selling" → DO NOT use sort_by (rely on relevance scoring)
 
 OPERATOR RULES:
 - Exact match: := (e.g., brand:=Mercedes Scientific)
