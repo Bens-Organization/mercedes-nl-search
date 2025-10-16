@@ -45,8 +45,8 @@ export default function Home() {
     'Sterile surgical instruments, stainless steel',
     'Safety goggles with anti-fog coating',
     'Show me the most popular lab equipment',
-    'Give me the latest microscopes',
-    'Digital thermometers, in stock, under $100',
+    'Laboratory gloves, size medium, in stock',
+    'Test tubes, glass, in stock',
     'Centrifuge tubes, 50ml capacity',
   ];
 
