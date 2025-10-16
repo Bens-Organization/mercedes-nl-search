@@ -2,14 +2,35 @@
 
 **Goal:** Deploy your Mercedes Scientific NL Search app online in ~30 minutes
 
+**You're using:** ✅ Typesense Cloud (managed service)
+
 ## Prerequisites
 
 - [ ] GitHub account
 - [ ] Git installed locally
+- [ ] ✅ Typesense Cloud cluster (you have this!)
 - [ ] All API keys ready (see ENV_SETUP.md if you need help getting these):
   - OpenAI API key
-  - Typesense API key & host
+  - Typesense Cloud API key & host
   - Neon database connection string
+
+---
+
+## Step 0: Get Typesense Cloud Credentials (2 minutes)
+
+Since you've already launched your Typesense Cloud cluster:
+
+1. Go to [cloud.typesense.org](https://cloud.typesense.org)
+2. Click on your cluster
+3. **Copy these values** (you'll need them later):
+   ```
+   Host: xxx.a1.typesense.net (or similar)
+   Port: 443
+   Protocol: https
+   API Key: (click "Generate API Key" or use existing)
+   ```
+
+**Save these!** You'll add them as environment variables in Step 2.
 
 ---
 
@@ -63,20 +84,25 @@ git push -u origin main
 
 Click **"Advanced"** → **"Add Environment Variable"** and add these:
 
+**Use the Typesense Cloud credentials from Step 0!**
+
 ```
 OPENAI_API_KEY=your_actual_key_here
 OPENAI_MODEL=gpt-4o-mini-2024-07-18
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-TYPESENSE_API_KEY=your_actual_key_here
-TYPESENSE_HOST=your_host.a1.typesense.net
+
+# Typesense Cloud credentials (from Step 0)
+TYPESENSE_API_KEY=your_typesense_cloud_api_key
+TYPESENSE_HOST=xxx.a1.typesense.net
 TYPESENSE_PORT=443
 TYPESENSE_PROTOCOL=https
+
 NEON_DATABASE_URL=postgresql://your_connection_string
 FLASK_ENV=production
 FLASK_PORT=5001
 ```
 
-**Pro tip:** Copy from your local `.env` file
+**Pro tip:** These should match your Typesense Cloud cluster credentials from Step 0
 
 6. Click **"Create Web Service"**
 7. Wait 5-10 minutes for build to complete

@@ -2,6 +2,20 @@
 
 AI-powered natural language search for Mercedes Scientific products using **Hybrid Search** (Semantic + Keyword) with Typesense and OpenAI.
 
+## Production Deployment
+
+**Status**: ✅ **LIVE**
+
+- **Frontend**: [https://mercedes-nl-search.vercel.app](https://mercedes-nl-search.vercel.app)
+- **Backend API**: [https://mercedes-search-api.onrender.com](https://mercedes-search-api.onrender.com)
+- **Search Engine**: Typesense Cloud (8GB cluster)
+- **Database**: Neon PostgreSQL
+- **AI Models**: OpenAI GPT-4o-mini + text-embedding-3-small
+
+**Deployed Stack**: 34,607 products indexed with full semantic search capabilities.
+
+For deployment guides, see the [`/docs/deployment`](/docs/deployment) directory.
+
 ## Features
 
 - 🔍 **Hybrid Search**: Combines semantic (meaning-based) and keyword search for best results
@@ -429,17 +443,18 @@ mercedes-natural-language-search/
 │   ├── setup_nl_model.py     # Natural language model setup
 │   ├── config.py             # Configuration management
 │   └── models.py             # Pydantic data models
+├── docs/                      # Documentation
+│   ├── deployment/           # Deployment guides
+│   ├── reference/            # Reference docs
+│   └── architecture/         # Architecture docs
+├── tests/                     # Test files
 ├── database/                  # Exported product data
-│   └── *.csv
-├── frontend/                  # React frontend (optional)
-│   ├── src/
-│   │   ├── App.jsx
-│   │   └── components/
-│   ├── package.json
-│   └── vite.config.js
+├── frontend-next/            # Next.js frontend
+│   ├── app/
+│   ├── components/
+│   └── package.json
 ├── requirements.txt          # Python dependencies
 ├── .env.example             # Environment variables template
-├── .env                     # Your credentials (gitignored)
 ├── start-ui.sh              # Quick frontend starter script
 ├── README.md                # This file
 └── CLAUDE.md                # AI assistant context
@@ -643,6 +658,24 @@ Contributions welcome! Please:
 3. Make your changes
 4. Submit a pull request
 
+## Deployment
+
+This project is deployed in production. For deployment guides:
+
+- **Quick Start**: See [`/docs/deployment/DEPLOYMENT_QUICKSTART.md`](/docs/deployment/DEPLOYMENT_QUICKSTART.md)
+- **Full Guide**: See [`/docs/deployment/DEPLOYMENT.md`](/docs/deployment/DEPLOYMENT.md)
+- **Environment Setup**: See [`/docs/deployment/ENV_SETUP.md`](/docs/deployment/ENV_SETUP.md)
+- **Typesense Cloud**: See [`/docs/deployment/TYPESENSE_CLOUD_SETUP.md`](/docs/deployment/TYPESENSE_CLOUD_SETUP.md)
+
+## Documentation
+
+All documentation is organized in the `/docs` directory:
+
+- **Deployment Guides**: `/docs/deployment/` - Production deployment instructions
+- **Reference Docs**: `/docs/reference/` - Alternative setups and scaling strategies
+- **Architecture**: `/docs/architecture/` - Technical deep-dives
+- **AI Assistant Context**: `CLAUDE.md` - Context for AI assistants working on this codebase
+
 ## Roadmap
 
 - [ ] Add more embedding models (Cohere, Voyage AI)
@@ -659,10 +692,9 @@ MIT
 
 ## Support
 
-- Issues: https://github.com/yourusername/mercedes-natural-language-search/issues
 - Typesense Docs: https://typesense.org/docs/guide/semantic-search.html
 - OpenAI Embeddings: https://platform.openai.com/docs/guides/embeddings
 
 ---
 
-Built with ❤️ using Typesense, OpenAI, and Python
+Built with Typesense, OpenAI, and Python • Deployed on Vercel + Render + Typesense Cloud

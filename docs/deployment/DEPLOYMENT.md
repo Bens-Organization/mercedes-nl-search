@@ -2,6 +2,11 @@
 
 This guide will help you deploy both the backend (Flask API) and frontend (Next.js) to production.
 
+**You're using:** ✅ Typesense Cloud (managed search service)
+
+> **Quick Start:** If you want a faster guide, see `DEPLOYMENT_QUICKSTART.md`
+> **Typesense Cloud Setup:** See `TYPESENSE_CLOUD_SETUP.md` for getting your credentials
+
 ## Architecture Overview
 
 ```
