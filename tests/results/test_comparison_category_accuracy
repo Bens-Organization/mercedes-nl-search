@@ -1,0 +1,197 @@
+PASSED [  3%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'Ansell glove ANS 5789911', 'per_page': 20, 'q': 'Ansell gloves ANS 5789911'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves', 'q': 'Ansell glove ANS 5789911', 'sort_by': ''}, 'generated_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves', 'q': 'Ansell glove ANS 5789911', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "Ansell glove ANS 5789911",\n  "filter_by": "categories:=Products/Gloves & Apparel/Gloves",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 2916}
+================================
+
+PASSED [  7%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'nitrile glove', 'per_page': 20, 'q': 'nitrile gloves'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves', 'q': 'nitrile glove', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves', 'q': 'nitrile glove'}, 'llm_response': {'content': '{\n  "q": "nitrile glove",\n  "filter_by": "categories:=Products/Gloves & Apparel/Gloves"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1454}
+================================
+
+PASSED [ 11%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'pipette', 'per_page': 20, 'q': 'pipettes'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Pipettes', 'q': 'pipette', 'sort_by': ''}, 'generated_params': {'filter_by': 'categories:=Products/Pipettes', 'q': 'pipette', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "pipette",\n  "filter_by": "categories:=Products/Pipettes",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1258}
+================================
+
+PASSED [ 15%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'microscope slide', 'per_page': 20, 'q': 'microscope slides'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Microscope Slides', 'q': 'microscope slide', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Microscope Slides', 'q': 'microscope slide'}, 'llm_response': {'content': '{\n  "q": "microscope slide",\n  "filter_by": "categories:=Products/Microscope Slides"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1335}
+================================
+
+SKIPPED [ 19%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'lab coat', 'per_page': 20, 'q': 'lab coats'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Lab Coats', 'q': 'lab coat', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Lab Coats', 'q': 'lab coat'}, 'llm_response': {'content': '{\n  "q": "lab coat",\n  "filter_by": "categories:=Products/Gloves & Apparel/Lab Coats"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1303}
+================================
+
+
+Skipped: RAG improved on OLD for 'lab coats'
+PASSED [ 23%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'blue nitrile glove', 'per_page': 20, 'q': 'blue nitrile gloves size medium'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves && size:=Medium', 'q': 'blue nitrile glove', 'sort_by': ''}, 'generated_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves && size:=Medium', 'q': 'blue nitrile glove', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "blue nitrile glove",\n  "filter_by": "categories:=Products/Gloves & Apparel/Gloves && size:=Medium",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1182}
+================================
+
+PASSED [ 26%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'sterile surgical glove', 'per_page': 20, 'q': 'sterile surgical gloves'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves', 'q': 'sterile surgical glove', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves', 'q': 'sterile surgical glove'}, 'llm_response': {'content': '{\n  "q": "sterile surgical glove",\n  "filter_by": "categories:=Products/Gloves & Apparel/Gloves"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1199}
+================================
+
+PASSED [ 30%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'pipette 1000μL adjustable', 'per_page': 20, 'q': '1000μL adjustable pipette'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Pipettes', 'q': 'pipette 1000μL adjustable', 'sort_by': ''}, 'generated_params': {'filter_by': 'categories:=Products/Pipettes', 'q': 'pipette 1000μL adjustable', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "pipette 1000μL adjustable",\n  "filter_by": "categories:=Products/Pipettes",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1550}
+================================
+
+PASSED [ 34%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': '', 'per_page': 20, 'q': 'Mercedes Scientific'}
+Parsed NL query: {'augmented_params': {'filter_by': 'brand:=Mercedes Scientific', 'q': '', 'sort_by': ''}, 'generated_params': {'filter_by': 'brand:=Mercedes Scientific', 'q': '', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "",\n  "filter_by": "brand:=Mercedes Scientific",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1034}
+================================
+
+PASSED [ 38%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'Yamato', 'per_page': 20, 'q': 'Yamato'}
+Parsed NL query: {'augmented_params': {'filter_by': '', 'q': 'Yamato', 'sort_by': ''}, 'generated_params': {'filter_by': '', 'q': 'Yamato', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "Yamato",\n  "filter_by": "",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1227}
+================================
+
+PASSED [ 42%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'pipette', 'per_page': 20, 'q': 'Thermo Fisher pipettes'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Pipettes && brand:=Fisher Scientific', 'q': 'pipette', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Pipettes && brand:=Fisher Scientific', 'q': 'pipette'}, 'llm_response': {'content': '{\n  "q": "pipette",\n  "filter_by": "categories:=Products/Pipettes && brand:=Fisher Scientific"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1204}
+================================
+
+PASSED [ 46%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': '', 'per_page': 20, 'q': 'filters'}
+Parsed NL query: {'augmented_params': {'filter_by': '', 'q': '', 'sort_by': ''}, 'generated_params': {'filter_by': '', 'q': '', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "",\n  "filter_by": "",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1179}
+================================
+
+PASSED [ 50%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'tube', 'per_page': 20, 'q': 'tubes'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Glass & Plasticware/Tubes', 'q': 'tube', 'sort_by': ''}, 'generated_params': {'filter_by': 'categories:=Products/Glass & Plasticware/Tubes', 'q': 'tube', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "tube",\n  "filter_by": "categories:=Products/Glass & Plasticware/Tubes",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1733}
+================================
+
+PASSED [ 53%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'container', 'per_page': 20, 'q': 'containers'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Glass & Plasticware/Containers', 'q': 'container', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Glass & Plasticware/Containers', 'q': 'container'}, 'llm_response': {'content': '{\n  "q": "container",\n  "filter_by": "categories:=Products/Glass & Plasticware/Containers"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1180}
+================================
+
+PASSED [ 57%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'safety goggle', 'per_page': 20, 'q': 'safety goggles'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Safety Goggles', 'q': 'safety goggle', 'sort_by': ''}, 'generated_params': {'filter_by': 'categories:=Products/Safety Goggles', 'q': 'safety goggle', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "safety goggle",\n  "filter_by": "categories:=Products/Safety Goggles",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1270}
+================================
+
+SKIPPED [ 61%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'autoclave sterilization bag', 'per_page': 20, 'q': 'autoclave sterilization bags'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Glass & Plasticware/Autoclave Bags', 'q': 'autoclave sterilization bag', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Glass & Plasticware/Autoclave Bags', 'q': 'autoclave sterilization bag'}, 'llm_response': {'content': '{\n  "q": "autoclave sterilization bag",\n  "filter_by": "categories:=Products/Glass & Plasticware/Autoclave Bags"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1165}
+================================
+
+
+Skipped: RAG improved on OLD for 'autoclave sterilization bags'
+PASSED [ 65%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': '', 'per_page': 20, 'q': 'clear'}
+Parsed NL query: {'augmented_params': {'filter_by': '', 'q': '', 'sort_by': ''}, 'generated_params': {'filter_by': '', 'q': '', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "",\n  "filter_by": "",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1160}
+================================
+
+PASSED [ 69%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'large', 'per_page': 20, 'q': 'large'}
+Parsed NL query: {'augmented_params': {'filter_by': '', 'q': 'large', 'sort_by': ''}, 'generated_params': {'filter_by': '', 'q': 'large', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "large",\n  "filter_by": "",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1020}
+================================
+
+PASSED [ 73%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'sterile', 'per_page': 20, 'q': 'sterile'}
+Parsed NL query: {'augmented_params': {'filter_by': '', 'q': 'sterile', 'sort_by': ''}, 'generated_params': {'filter_by': '', 'q': 'sterile', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "sterile",\n  "filter_by": "",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1210}
+================================
+
+PASSED [ 76%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'products', 'per_page': 20, 'q': 'products under $50'}
+Parsed NL query: {'augmented_params': {'filter_by': 'price:<50', 'q': 'products', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'price:<50', 'q': 'products'}, 'llm_response': {'content': '{\n  "q": "products",\n  "filter_by": "price:<50"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1935}
+================================
+
+PASSED [ 80%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'glove', 'per_page': 20, 'q': 'gloves under $50'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves && price:<50', 'q': 'glove', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves && price:<50', 'q': 'glove'}, 'llm_response': {'content': '{\n  "q": "glove",\n  "filter_by": "categories:=Products/Gloves & Apparel/Gloves && price:<50"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1326}
+================================
+
+PASSED [ 84%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'pipette', 'per_page': 20, 'q': 'pipettes in stock between $100 and $500'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Pipettes && price:[100..500] && stock_status:=IN_STOCK', 'q': 'pipette', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Pipettes && price:[100..500] && stock_status:=IN_STOCK', 'q': 'pipette'}, 'llm_response': {'content': '{\n  "q": "pipette",\n  "filter_by": "categories:=Products/Pipettes && price:[100..500] && stock_status:=IN_STOCK"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1585}
+================================
+
+FAILED [ 88%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'nitrile glove', 'per_page': 20, 'q': 'Mercedes Scientific nitrile gloves size medium'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves && brand:=Mercedes Scientific && size:=Medium', 'q': 'nitrile glove', 'sort_by': '_text_match:desc,price:asc'}, 'generated_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves && brand:=Mercedes Scientific && size:=Medium', 'q': 'nitrile glove'}, 'llm_response': {'content': '{\n  "q": "nitrile glove",\n  "filter_by": "categories:=Products/Gloves & Apparel/Gloves && brand:=Mercedes Scientific && size:=Medium"\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1391}
+================================
+
+
+tests/test_category_classification.py:243 (test_comparison_category_accuracy[Mercedes Scientific nitrile gloves size medium])
+tests/test_category_classification.py:260: in test_comparison_category_accuracy
+    pytest.fail(
+E   Failed: RAG regression: OLD was correct but RAG failed for 'Mercedes Scientific nitrile gloves size medium'
+E     Expected: Gloves
+E     OLD detected: Products/Gloves ✓
+E     RAG detected: None ✗
+E     RAG reasoning: The query contains a brand name and a product type, but there are no relevant categories for 'nitrile gloves' in the provided categories. The categories listed are focused on chemical solutions and si...
+PASSED [ 92%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'hand protection', 'per_page': 20, 'q': 'hand protection'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves', 'q': 'hand protection', 'sort_by': ''}, 'generated_params': {'filter_by': 'categories:=Products/Gloves & Apparel/Gloves', 'q': 'hand protection', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "hand protection",\n  "filter_by": "categories:=Products/Gloves & Apparel/Gloves",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1377}
+================================
+
+PASSED [ 96%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'liquid transfer tool', 'per_page': 20, 'q': 'liquid transfer tools'}
+Parsed NL query: {'augmented_params': {'filter_by': 'categories:=Products/Pipettes || categories:=Products/Glass & Plasticware/Tubes', 'q': 'liquid transfer tool', 'sort_by': ''}, 'generated_params': {'filter_by': 'categories:=Products/Pipettes || categories:=Products/Glass & Plasticware/Tubes', 'q': 'liquid transfer tool', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "liquid transfer tool",\n  "filter_by": "categories:=Products/Pipettes || categories:=Products/Glass & Plasticware/Tubes",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1368}
+================================
+
+SKIPPED [100%]
+=== Typesense Response Debug ===
+Search parameters in response: {}
+Request params: {'collection_name': 'mercedes_products', 'first_q': 'specimen viewing equipment', 'per_page': 20, 'q': 'specimen viewing equipment'}
+Parsed NL query: {'augmented_params': {'filter_by': '', 'q': 'specimen viewing equipment', 'sort_by': ''}, 'generated_params': {'filter_by': '', 'q': 'specimen viewing equipment', 'sort_by': ''}, 'llm_response': {'content': '{\n  "q": "specimen viewing equipment",\n  "filter_by": "",\n  "sort_by": ""\n}', 'model': 'gpt-4o-mini-2024-07-18'}, 'parse_time_ms': 1144}
+================================
+
+
+Skipped: RAG improved on OLD for 'specimen viewing equipment'
