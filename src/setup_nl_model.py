@@ -2,10 +2,20 @@
 
 This script registers an OpenAI model with Typesense for native NL search.
 Must be run before using nl_query=true in search requests.
+
+For RAG approach: This NL model extracts filters (price, stock, etc.) but NOT categories.
+RAG handles category detection via a second LLM call.
 """
+import sys
+from pathlib import Path
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 import typesense
 import requests
-from config import Config
+from src.config import Config
 
 # Validate configuration
 Config.validate()
@@ -17,29 +27,22 @@ def setup_nl_model():
     # Build Typesense URL
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
 
-    # Balanced system prompt - extracts filters when clearly mentioned
+    # RAG-optimized system prompt - extracts filters but NOT categories (RAG handles categories)
     system_prompt = """Extract search parameters from natural language queries for medical/scientific products.
+
+NOTE: This search uses RAG (Retrieval-Augmented Generation) for category detection.
+DO NOT extract category filters - only extract price, stock, and product attribute filters.
 
 QUERY FIELD ("q"):
 - Product types in SINGULAR form: "glove" not "gloves", "pipette" not "pipettes"
 - Material descriptors: "nitrile", "latex", "stainless steel", "glass"
 - General features: "sterile", "powder-free", "disposable", "surgical"
 - Technical specifications: "10μL capacity", "100mL volume", "0.5mm thickness"
+- KEEP product type in "q" for semantic search (e.g., "nitrile glove", "pipette")
 
-FILTER FIELD ("filter_by") - Extract when clearly mentioned:
-1. Category filters (extract when product type is clearly mentioned):
-   - "gloves" or "glove" → categories:=Products/Gloves & Apparel/Gloves
-   - "pipettes" or "pipette" → categories:=Products/Pipettes
-   - "microscope slides" or "slides" → categories:=Products/Microscope Slides
-   - "centrifuge" → categories:=Products/Equipment & Accessories/Centrifuges
-   - "beaker" or "beakers" → categories:=Products/Glass & Plasticware/Beakers
-   - "centrifuge tubes" → categories:=Products/Glass & Plasticware/Tubes/Centrifuge Tubes
-   - "culture tubes" → categories:=Products/Glass & Plasticware/Tubes/Culture Tubes
-   - "micro tubes" or "microtubes" → categories:=Products/Glass & Plasticware/Tubes/Micro Tubes
-   - "deep well plates" → categories:=Products/Deep Well Plates & Accessories/Deep well plates
-   - "reagent" or "reagents" → categories:=Products/Reagents
+FILTER FIELD ("filter_by") - Extract ONLY these filter types:
 
-2. Price filters (ALWAYS extract when ANY price is mentioned):
+1. Price filters (ALWAYS extract when ANY price is mentioned):
    - EXACT PRICE (default for bare amounts):
      * "costs $X" or "cost $X" → price:=X
      * "priced $X" or "priced at $X" → price:=X
@@ -51,10 +54,10 @@ FILTER FIELD ("filter_by") - Extract when clearly mentioned:
    - SPECIAL:
      * "on sale" or "discounted" → special_price:>0
 
-3. Stock filters (extract when stock mentioned):
+2. Stock filters (extract when stock mentioned):
    - "in stock" or "available" → stock_status:=IN_STOCK
 
-4. Product attributes (exact match only when EXPLICITLY stated):
+3. Product attributes (exact match only when EXPLICITLY stated):
    - Brand: "Mercedes Scientific brand" → brand:=Mercedes Scientific
    - Size: "size large" or "large size" → size:=Large
    - Color: "blue color" or "color blue" → color:=Blue
@@ -70,28 +73,30 @@ OPERATOR RULES:
 - Range: : (e.g., price:<50)
 - Combine filters: && (e.g., price:<50 && stock_status:=IN_STOCK)
 
-EXAMPLES:
-"nitrile gloves under $30" → {"q": "nitrile glove", "filter_by": "categories:=Products/Gloves & Apparel/Gloves && price:<30"}
-"pipettes in stock" → {"q": "pipette", "filter_by": "categories:=Products/Pipettes && stock_status:=IN_STOCK"}
-"nitrile gloves that costs $20" → {"q": "nitrile glove", "filter_by": "categories:=Products/Gloves & Apparel/Gloves && price:=20"}
-"nitrile gloves priced $20" → {"q": "nitrile glove", "filter_by": "categories:=Products/Gloves & Apparel/Gloves && price:=20"}
-"pipettes with at least 10μL capacity under $500" → {"q": "pipette 10μL capacity", "filter_by": "categories:=Products/Pipettes && price:<500"}
-"nitrile gloves powder-free in stock under $30" → {"q": "nitrile glove powder-free", "filter_by": "categories:=Products/Gloves & Apparel/Gloves && stock_status:=IN_STOCK && price:<30"}
-"beakers under $50" → {"q": "beaker", "filter_by": "categories:=Products/Glass & Plasticware/Beakers && price:<50"}
-"cheapest centrifuge" → {"q": "centrifuge", "filter_by": "categories:=Products/Equipment & Accessories/Centrifuges", "sort_by": "price:asc"}
+EXAMPLES (NO category filters - RAG handles categories):
+"nitrile gloves under $30" → {"q": "nitrile glove", "filter_by": "price:<30"}
+"pipettes in stock" → {"q": "pipette", "filter_by": "stock_status:=IN_STOCK"}
+"nitrile gloves that costs $20" → {"q": "nitrile glove", "filter_by": "price:=20"}
+"nitrile gloves priced $20" → {"q": "nitrile glove", "filter_by": "price:=20"}
+"pipettes with at least 10μL capacity under $500" → {"q": "pipette 10μL capacity", "filter_by": "price:<500"}
+"nitrile gloves powder-free in stock under $30" → {"q": "nitrile glove powder-free", "filter_by": "stock_status:=IN_STOCK && price:<30"}
+"beakers under $50" → {"q": "beaker", "filter_by": "price:<50"}
+"cheapest centrifuge" → {"q": "centrifuge", "sort_by": "price:asc"}
 "most popular lab equipment" → {"q": "lab equipment"}
+"Mercedes Scientific nitrile gloves size medium" → {"q": "nitrile glove", "filter_by": "brand:=Mercedes Scientific && size:=Medium"}
 
 CRITICAL RULES:
-1. ALWAYS extract category filter when product type is mentioned (if mapping exists)
-2. ALWAYS extract price filter when ANY price appears:
+1. DO NOT extract category filters - RAG handles category detection
+2. ALWAYS keep product type in "q" for semantic search (e.g., "nitrile glove", "pipette")
+3. ALWAYS extract price filter when ANY price appears:
    - DEFAULT: "costs $X", "cost $X", "priced $X" → price:=X (EXACT match)
    - RANGE: "under $X" → price:<X, "over $X" → price:>X
    - BETWEEN: "$X to $Y" → price:[X..Y]
-3. ALWAYS extract stock filter when stock mentioned (in stock → stock_status:=IN_STOCK)
-4. Technical specs (10μL, 100mL) stay in "q" - NEVER as filters
-5. Only extract size/color/brand as filters when EXPLICITLY stated as attributes
-6. Remove price phrases from "q" after extracting as filter
-7. NEVER use sort_by for "popular", "most popular", "best selling" - rely on relevance scoring
+4. ALWAYS extract stock filter when stock mentioned (in stock → stock_status:=IN_STOCK)
+5. Technical specs (10μL, 100mL) stay in "q" - NEVER as filters
+6. Only extract size/color/brand as filters when EXPLICITLY stated as attributes
+7. Remove price phrases from "q" after extracting as filter
+8. NEVER use sort_by for "popular", "most popular", "best selling" - rely on relevance scoring
 
 IMPORTANT: "costs", "cost", "priced" without range words = EXACT price (price:=X), NOT under (price:<X)"""
 
@@ -151,12 +156,15 @@ IMPORTANT: "costs", "cost", "priced" without range words = EXACT price (price:=X
             print(f"\n✓ Successfully created NL search model: {model_id}")
             print(f"✓ Configuration: {result}")
             print("\n" + "=" * 60)
-            print("Natural Language Search is now enabled!")
+            print("RAG Natural Language Search is now enabled!")
             print("=" * 60)
+            print("\nHow it works (Dual LLM approach):")
+            print("  1. LLM Call 1 (NL Model): Extracts filters (price, stock, etc.)")
+            print("  2. LLM Call 2 (RAG): Detects category based on retrieved products")
             print("\nNext steps:")
-            print("  1. Your search.py will now work with nl_query=true")
-            print("  2. Test with: python src/search.py")
-            print("  3. Or start API: python src/app.py")
+            print("  1. Test RAG search: python src/search_rag.py")
+            print("  2. Start API: python src/app.py")
+            print("  3. Query example: 'nitrile gloves powder-free in stock under $30'")
         else:
             print(f"\n✗ Error creating model: {create_response.status_code}")
             print(f"Response: {create_response.text}")
