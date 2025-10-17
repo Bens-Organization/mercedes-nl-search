@@ -332,6 +332,36 @@ Registers the OpenAI model with Typesense for native NL search.
 - Checks if model already exists
 - Allows updating/recreating the model
 
+### src/export_nl_system_prompt.py
+Exports the registered NL model's system prompt from Typesense.
+
+**Purpose**: Retrieve and inspect the actual system prompt being used by the deployed model.
+
+**Features**:
+- Retrieves model configuration from Typesense API
+- Exports system prompt to `nl_model_system_prompt.txt`
+- Saves full model config as `nl_model_system_prompt.json`
+- Shows prompt statistics (length, lines, preview)
+- Can compare deployed prompt with `setup_nl_model.py` version
+
+**Usage**:
+```bash
+# Export system prompt
+python src/export_nl_system_prompt.py
+
+# Export with comparison to setup file
+python src/export_nl_system_prompt.py --compare
+
+# Custom output file
+python src/export_nl_system_prompt.py -o my_prompt.txt
+```
+
+**Use Cases**:
+- Verify what prompt is actually deployed in production
+- Debug filter extraction issues
+- Compare local vs deployed model configurations
+- Document the current NL model setup
+
 **Hybrid Approach System Prompt** (SCALABLE ✨):
 The system prompt uses a **minimal, schema-driven approach** that scales to unlimited categories:
 
