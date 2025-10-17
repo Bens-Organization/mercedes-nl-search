@@ -68,5 +68,5 @@ typesense-data/
 # database/*.csv
 
 # Exported NL model system prompt (generated files)
-nl_model_system_prompt.txt
-nl_model_system_prompt.json
+database/typesense/nl_model_system_prompt.txt
+database/typesense/nl_model_system_prompt.json

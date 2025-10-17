@@ -117,7 +117,10 @@ tests/                  # Tests and evaluation results
 └── FINAL_SUMMARY.md                 # Executive implementation summary
 
 database/
-└── mercedes_products_*.csv  # Exported product data
+├── typesense/                         # Typesense configuration exports
+│   ├── nl_model_system_prompt.txt     # NL model system prompt (exported)
+│   └── nl_model_system_prompt.json    # Full NL model config (exported)
+└── mercedes_products_*.csv            # Product data exports
 
 frontend-next/
 ├── app/
@@ -339,14 +342,14 @@ Exports the registered NL model's system prompt from Typesense.
 
 **Features**:
 - Retrieves model configuration from Typesense API
-- Exports system prompt to `nl_model_system_prompt.txt`
-- Saves full model config as `nl_model_system_prompt.json`
+- Exports system prompt to `database/typesense/nl_model_system_prompt.txt`
+- Saves full model config as `database/typesense/nl_model_system_prompt.json`
 - Shows prompt statistics (length, lines, preview)
 - Can compare deployed prompt with `setup_nl_model.py` version
 
 **Usage**:
 ```bash
-# Export system prompt
+# Export system prompt (saves to database/typesense/)
 python src/export_nl_system_prompt.py
 
 # Export with comparison to setup file
@@ -355,6 +358,10 @@ python src/export_nl_system_prompt.py --compare
 # Custom output file
 python src/export_nl_system_prompt.py -o my_prompt.txt
 ```
+
+**Output Location**:
+- Default: `database/typesense/` directory
+- Organized alongside other database exports (product CSVs)
 
 **Use Cases**:
 - Verify what prompt is actually deployed in production
