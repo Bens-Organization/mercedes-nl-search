@@ -67,6 +67,6 @@ typesense-data/
 # Database exports (optional - keep if you want to commit sample data)
 # database/*.csv
 
-# Exported NL model system prompt (generated files)
-database/typesense/nl_model_system_prompt.txt
-database/typesense/nl_model_system_prompt.json
+# Exported NL model system prompt (generated files, organized by Typesense host)
+database/*/nl_model_system_prompt.txt
+database/*/nl_model_system_prompt.json

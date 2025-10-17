@@ -23,14 +23,16 @@ def export_system_prompt(output_file: str = None):
     Export the NL model's system prompt from Typesense.
 
     Args:
-        output_file: Path to output file (default: database/typesense/nl_model_system_prompt.txt)
+        output_file: Path to output file (default: database/{TYPESENSE_HOST}/nl_model_system_prompt.txt)
     """
-    # Default output file
-    if output_file is None:
-        output_file = "database/typesense/nl_model_system_prompt.txt"
-
     # Build Typesense URL
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
+
+    # Default output file - organized by Typesense host
+    if output_file is None:
+        output_dir = Path("database") / Config.TYPESENSE_HOST
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_dir / "nl_model_system_prompt.txt")
 
     # The model ID (UUID assigned by Typesense)
     model_id = "openai-gpt4o-mini"
@@ -143,7 +145,8 @@ def compare_with_file_version():
 
         if match:
             file_prompt = match.group(1).strip()
-            exported_prompt = Path("database/typesense/nl_model_system_prompt.txt").read_text(encoding='utf-8').strip()
+            exported_path = Path("database") / Config.TYPESENSE_HOST / "nl_model_system_prompt.txt"
+            exported_prompt = exported_path.read_text(encoding='utf-8').strip()
 
             if file_prompt == exported_prompt:
                 print("\n✓ System prompts match!")
@@ -171,8 +174,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-o", "--output",
-        default="database/typesense/nl_model_system_prompt.txt",
-        help="Output file path (default: database/typesense/nl_model_system_prompt.txt)"
+        default=None,
+        help="Output file path (default: database/{TYPESENSE_HOST}/nl_model_system_prompt.txt)"
     )
     parser.add_argument(
         "--compare",
