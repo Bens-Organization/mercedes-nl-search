@@ -68,6 +68,10 @@ export default function Home() {
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+      // Enable debug mode in local development
+      const isLocalDevelopment = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
+
       let response;
 
       try {
@@ -79,6 +83,7 @@ export default function Home() {
           body: JSON.stringify({
             query: searchQuery,
             max_results: 20 * pageNum,
+            debug: isLocalDevelopment, // Enable debug in local development
           }),
         });
       } catch (fetchError) {
@@ -209,12 +214,31 @@ export default function Home() {
       {stats && !loading && stats.typesenseQuery && (
         <pre className="text-xs mb-4 block max-w-full overflow-auto w-full">
           {(() => {
-            const parsed = stats.typesenseQuery.parsed || {};
+            // RAG approach uses different structure for parsed query
+            const tq = stats.typesenseQuery;
             const parts = [];
 
-            if (parsed.q) parts.push(`"q":"${parsed.q}"`);
-            if (parsed.filter_by) parts.push(`"filter_by":"${parsed.filter_by}"`);
-            if (parsed.sort_by) parts.push(`"sort_by":"${parsed.sort_by}"`);
+            // Use RAG extracted query if available, otherwise fall back to parsed
+            const extractedQuery = tq.nl_extracted_query || tq.parsed?.q || query;
+            const extractedFilters = tq.nl_extracted_filters || tq.parsed?.filter_by;
+            const extractedSort = tq.nl_extracted_sort || tq.parsed?.sort_by;
+
+            if (extractedQuery) parts.push(`"q":"${extractedQuery}"`);
+
+            // Combine category filter (from RAG) with NL-extracted filters
+            const filterParts = [];
+            if (tq.category_applied && tq.detected_category) {
+              filterParts.push(`categories:=\`${tq.detected_category}\``);
+            }
+            if (extractedFilters && extractedFilters !== 'none') {
+              filterParts.push(extractedFilters);
+            }
+
+            if (filterParts.length > 0) {
+              parts.push(`"filter_by":"${filterParts.join(' && ')}"`);
+            }
+
+            if (extractedSort && extractedSort !== 'default') parts.push(`"sort_by":"${extractedSort}"`);
 
             if (parts.length === 0) {
               return `{"q":"${query}"}`;
