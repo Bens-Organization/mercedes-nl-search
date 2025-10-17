@@ -17,18 +17,17 @@ def setup_nl_model():
     # Build Typesense URL
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
 
-    # Model configuration with minimal hybrid prompt
-    # NOTE: Categories are handled via semantic search - no need to hardcode 100+ mappings!
+    # Balanced system prompt - extracts filters when clearly mentioned
     system_prompt = """Extract search parameters from natural language queries for medical/scientific products.
 
 QUERY FIELD ("q"):
 - Product types in SINGULAR form: "glove" not "gloves", "pipette" not "pipettes"
 - Material descriptors: "nitrile", "latex", "stainless steel", "glass"
 - General features: "sterile", "powder-free", "disposable", "surgical"
-- Modifiers: "precision", "high-quality", "professional"
+- Technical specifications: "10μL capacity", "100mL volume", "0.5mm thickness"
 
-FILTER FIELD ("filter_by") - Use when explicitly mentioned:
-1. Category filters (IMPORTANT - extract categories when product type is mentioned):
+FILTER FIELD ("filter_by") - Extract when clearly mentioned:
+1. Category filters (extract when product type is clearly mentioned):
    - "gloves" or "glove" → categories:=Products/Gloves & Apparel/Gloves
    - "pipettes" or "pipette" → categories:=Products/Pipettes
    - "microscope slides" or "slides" → categories:=Products/Microscope Slides
@@ -38,56 +37,68 @@ FILTER FIELD ("filter_by") - Use when explicitly mentioned:
    - "culture tubes" → categories:=Products/Glass & Plasticware/Tubes/Culture Tubes
    - "micro tubes" or "microtubes" → categories:=Products/Glass & Plasticware/Tubes/Micro Tubes
    - "deep well plates" → categories:=Products/Deep Well Plates & Accessories/Deep well plates
-   - "reagent" or "reagents" → categories:=Products/Reagents (use broader match)
+   - "reagent" or "reagents" → categories:=Products/Reagents
 
-2. Price filters:
-   - "under $X" → price:<X
-   - "$X to $Y" → price:[X..Y]
-   - "over $X" → price:>X
-   - "on sale" or "discounted" → special_price:<price_limit
+2. Price filters (ALWAYS extract when ANY price is mentioned):
+   - EXACT PRICE (default for bare amounts):
+     * "costs $X" or "cost $X" → price:=X
+     * "priced $X" or "priced at $X" → price:=X
+     * "that costs $X" or "that cost $X" → price:=X
+   - RANGE FILTERS:
+     * "under $X" or "less than $X" → price:<X
+     * "over $X" or "more than $X" → price:>X
+     * "$X to $Y" or "between $X and $Y" → price:[X..Y]
+   - SPECIAL:
+     * "on sale" or "discounted" → special_price:>0
 
-3. Product attributes (use := for exact match):
-   - Brand: brand:=Mercedes Scientific, brand:=Greiner Bio-One
-   - Size: size:=1 Gallon, size:=Large, size:=2 x 2
-   - Color: color:=Clear, color:=White, color:=Blue
-   - Physical form: physical_form:=Liquid, physical_form:=Solid, physical_form:=Powder
+3. Stock filters (extract when stock mentioned):
+   - "in stock" or "available" → stock_status:=IN_STOCK
 
-4. Inventory filters:
-   - "in stock" → stock_status:=IN_STOCK
-   - "qty > X" → qty:>X
+4. Product attributes (exact match only when EXPLICITLY stated):
+   - Brand: "Mercedes Scientific brand" → brand:=Mercedes Scientific
+   - Size: "size large" or "large size" → size:=Large
+   - Color: "blue color" or "color blue" → color:=Blue
 
 SORT FIELD ("sort_by"):
 - "cheapest" or "lowest price" → price:asc
 - "most expensive" or "highest price" → price:desc
 - "latest" or "newest" → created_at:desc
-- "recently updated" → updated_at:desc
 - "popular" or "most popular" or "best selling" → DO NOT use sort_by (rely on relevance scoring)
 
 OPERATOR RULES:
 - Exact match: := (e.g., brand:=Mercedes Scientific)
-- Range: : (e.g., price:<50, qty:>10)
+- Range: : (e.g., price:<50)
 - Combine filters: && (e.g., price:<50 && stock_status:=IN_STOCK)
 
 EXAMPLES:
 "nitrile gloves under $30" → {"q": "nitrile glove", "filter_by": "categories:=Products/Gloves & Apparel/Gloves && price:<30"}
 "pipettes in stock" → {"q": "pipette", "filter_by": "categories:=Products/Pipettes && stock_status:=IN_STOCK"}
-"centrifuge tubes" → {"q": "centrifuge tube", "filter_by": "categories:=Products/Glass & Plasticware/Tubes/Centrifuge Tubes"}
-"microscope slides" → {"q": "microscope slide", "filter_by": "categories:=Products/Microscope Slides"}
-"cheapest centrifuge" → {"q": "centrifuge", "filter_by": "categories:=Products/Equipment & Accessories/Centrifuges", "sort_by": "price:asc"}
-"most expensive gloves" → {"q": "glove", "filter_by": "categories:=Products/Gloves & Apparel/Gloves", "sort_by": "price:desc"}
+"nitrile gloves that costs $20" → {"q": "nitrile glove", "filter_by": "categories:=Products/Gloves & Apparel/Gloves && price:=20"}
+"nitrile gloves priced $20" → {"q": "nitrile glove", "filter_by": "categories:=Products/Gloves & Apparel/Gloves && price:=20"}
+"pipettes with at least 10μL capacity under $500" → {"q": "pipette 10μL capacity", "filter_by": "categories:=Products/Pipettes && price:<500"}
+"nitrile gloves powder-free in stock under $30" → {"q": "nitrile glove powder-free", "filter_by": "categories:=Products/Gloves & Apparel/Gloves && stock_status:=IN_STOCK && price:<30"}
 "beakers under $50" → {"q": "beaker", "filter_by": "categories:=Products/Glass & Plasticware/Beakers && price:<50"}
-"sterile gloves" → {"q": "sterile glove", "filter_by": "categories:=Products/Gloves & Apparel/Gloves"}
+"cheapest centrifuge" → {"q": "centrifuge", "filter_by": "categories:=Products/Equipment & Accessories/Centrifuges", "sort_by": "price:asc"}
+"most popular lab equipment" → {"q": "lab equipment"}
 
-CRITICAL NOTES:
-- ALWAYS extract category filters when product type is mentioned (gloves, pipettes, etc.)
-- Category filters MUST be combined with other filters using && operator
-- Keep "q" focused on modifiers (nitrile, sterile, etc.) - NOT the product type
-- Extract specific attributes (brand, size, color, price) as additional filters"""
+CRITICAL RULES:
+1. ALWAYS extract category filter when product type is mentioned (if mapping exists)
+2. ALWAYS extract price filter when ANY price appears:
+   - DEFAULT: "costs $X", "cost $X", "priced $X" → price:=X (EXACT match)
+   - RANGE: "under $X" → price:<X, "over $X" → price:>X
+   - BETWEEN: "$X to $Y" → price:[X..Y]
+3. ALWAYS extract stock filter when stock mentioned (in stock → stock_status:=IN_STOCK)
+4. Technical specs (10μL, 100mL) stay in "q" - NEVER as filters
+5. Only extract size/color/brand as filters when EXPLICITLY stated as attributes
+6. Remove price phrases from "q" after extracting as filter
+7. NEVER use sort_by for "popular", "most popular", "best selling" - rely on relevance scoring
+
+IMPORTANT: "costs", "cost", "priced" without range words = EXACT price (price:=X), NOT under (price:<X)"""
 
     model_id = "openai-gpt4o-mini"
     model_config = {
         "id": model_id,
-        "model_name": "openai/gpt-4o-mini",  # Correct format: provider/model-name
+        "model_name": "openai/gpt-4o-mini-2024-07-18",  # Correct format: provider/model-name
         "api_key": Config.OPENAI_API_KEY,
         "max_bytes": 16000,  # Maximum bytes to send to LLM
         "temperature": 0.0,  # Deterministic results
