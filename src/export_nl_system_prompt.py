@@ -23,11 +23,11 @@ def export_system_prompt(output_file: str = None):
     Export the NL model's system prompt from Typesense.
 
     Args:
-        output_file: Path to output file (default: nl_model_system_prompt.txt)
+        output_file: Path to output file (default: database/typesense/nl_model_system_prompt.txt)
     """
     # Default output file
     if output_file is None:
-        output_file = "nl_model_system_prompt.txt"
+        output_file = "database/typesense/nl_model_system_prompt.txt"
 
     # Build Typesense URL
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
@@ -143,7 +143,7 @@ def compare_with_file_version():
 
         if match:
             file_prompt = match.group(1).strip()
-            exported_prompt = Path("nl_model_system_prompt.txt").read_text(encoding='utf-8').strip()
+            exported_prompt = Path("database/typesense/nl_model_system_prompt.txt").read_text(encoding='utf-8').strip()
 
             if file_prompt == exported_prompt:
                 print("\n✓ System prompts match!")
@@ -171,8 +171,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-o", "--output",
-        default="nl_model_system_prompt.txt",
-        help="Output file path (default: nl_model_system_prompt.txt)"
+        default="database/typesense/nl_model_system_prompt.txt",
+        help="Output file path (default: database/typesense/nl_model_system_prompt.txt)"
     )
     parser.add_argument(
         "--compare",
