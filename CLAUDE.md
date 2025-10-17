@@ -29,32 +29,48 @@ This file provides context for AI assistants (like Claude) working on this codeb
 1. **Neon Database Indexer** (RECOMMENDED): Direct access to 34,000+ products from Neon PostgreSQL database
 2. **GraphQL API Indexer** (LEGACY): Limited to 5,000-10,000 products due to API's 500-product limit
 
-### Key Innovation: Hybrid Search with Native NL
+### Key Innovation: Dual LLM RAG Approach
 
-The system uses **hybrid search** combining:
-1. **Native NL Search** via Typesense v29.0+ (built-in query translation with GPT-4o-mini)
-2. **Semantic search** via OpenAI embeddings (text-embedding-3-small)
-3. **Keyword search** via Typesense full-text search
+The system uses a **dual LLM approach** that combines:
+1. **LLM Call 1**: Natural language query translation via Typesense NL (filter extraction)
+2. **LLM Call 2**: RAG-based category classification (intelligent category detection)
+
+This achieves **84.6% accuracy** on the test dataset while providing transparent reasoning for search decisions.
+
+**Full Documentation**: See `docs/RAG_DUAL_LLM_APPROACH.md` for comprehensive details.
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-    A["👤 User Query<br/>'sterile gloves under $100'"] --> B["🤖 GPT-4o-mini Query Translation<br/>Extracts: terms, filters, intents"]
-    B --> C["📋 Structured Query<br/>{<br/>  q: 'sterile gloves',<br/>  filter_by: 'price:[0..100]'<br/>}"]
-    C --> D["🔍 Typesense Hybrid Search"]
-    D --> E["🧠 Semantic Search<br/>OpenAI Embeddings<br/>(text-embedding-3-small)"]
-    D --> F["🔤 Keyword Search<br/>Full-text Index"]
-    E --> G["✨ Ranked Results"]
+    A["👤 User Query<br/>nitrile gloves, powder-free, in stock, under $30"]
+    B["🤖 LLM Call 1: NL Query Translation<br/>Typesense NL Model"]
+    C["📊 Extracted<br/>q: nitrile glove powder-free<br/>filter_by: stock_status:=IN_STOCK && price:<30"]
+    D["🔍 Retrieval Search<br/>20 products with NL filters<br/>NO category filter yet"]
+    E["📦 Context Extraction<br/>Group by categories<br/>Sample products per category"]
+    F["🤖 LLM Call 2: RAG Classification<br/>GPT-4o-mini analyzes context"]
+    G["✅ Category Detected<br/>Products/Gloves & Apparel/Gloves<br/>Confidence: 0.85"]
+    H["🎯 Final Search<br/>categories:=Gloves<br/>&& stock_status:=IN_STOCK<br/>&& price:<30"]
+    I["✨ Results<br/>3 nitrile gloves, powder-free, in stock, under $30"]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
     F --> G
+    G --> H
+    H --> I
 
     style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
     style B fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
     style C fill:#f5f5f5,stroke:#616161,stroke-width:2px,color:#000
     style D fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000
-    style E fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
-    style F fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#000
+    style E fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#000
+    style F fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
     style G fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
+    style H fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style I fill:#b2ebf2,stroke:#0097a7,stroke-width:3px,color:#000
 ```
 
 ## Tech Stack
@@ -84,19 +100,41 @@ src/
 ├── config.py           # Configuration management
 ├── indexer_neon.py     # Neon database indexer (RECOMMENDED - 26k+ products)
 ├── indexer.py          # GraphQL API indexer (LEGACY - 5-10k products)
-├── search.py           # Hybrid search implementation
+├── search.py           # Single LLM search implementation (LEGACY)
+├── search_rag.py       # RAG dual LLM search implementation (CURRENT - 84.6% accuracy)
 ├── setup_nl_model.py   # Natural language model registration
 └── models.py           # Pydantic data models
+
+docs/                   # Technical documentation
+├── RAG_DUAL_LLM_APPROACH.md              # Comprehensive RAG implementation guide
+└── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison of approaches
+
+tests/                  # Tests and evaluation results
+├── test_category_classification.py  # RAG test suite (26 cases)
+├── category_test_cases.py           # Test dataset
+├── EVALUATION_RESULTS_FINAL.md      # Detailed RAG evaluation results
+├── EVALUATION_RESULTS.md            # Initial evaluation
+└── FINAL_SUMMARY.md                 # Executive implementation summary
 
 database/
 └── mercedes_products_*.csv  # Exported product data
 
-frontend/
-├── src/
-│   ├── App.jsx
+frontend-next/
+├── app/
+│   ├── page.tsx        # Main search page with RAG integration
 │   └── components/
 └── package.json
+
+# Root-level documentation
+├── README.md           # User-facing documentation
+├── CLAUDE.md          # AI assistant context (this file)
+└── DEPLOYMENT.md      # Production deployment guide
 ```
+
+**Important**:
+- **Evaluation/summary docs** are in `tests/` directory (not root)
+- **Technical docs** are in `docs/` directory
+- All flowcharts use **Mermaid markdown** with dark text on light backgrounds
 
 ## Key Files Explained
 
@@ -210,8 +248,8 @@ Search terms: 110 different queries
 - Standard fields: product_id, name, sku, price, description, etc.
 - **Embedding field**: Auto-generated from [name, description, short_description, categories]
 
-### src/search.py
-Implements natural language search using Typesense's native NL feature.
+### src/search.py (LEGACY)
+Implements natural language search using Typesense's native NL feature (single LLM approach).
 
 **Flow**:
 1. `_execute_nl_search()`: Executes search with `nl_query=true` - Typesense automatically extracts filters, sorts, etc.
@@ -223,6 +261,67 @@ Implements natural language search using Typesense's native NL feature.
 - Automatic filter extraction (price, stock, categories)
 - Debug mode to see how LLM interprets queries
 - Fallback to keyword-only search if NL fails
+
+**Note**: This is the legacy single-LLM implementation. The current production implementation uses `search_rag.py` instead.
+
+### src/search_rag.py (CURRENT)
+Implements RAG-based natural language search with dual LLM approach for improved category classification.
+
+**Class**: `RAGNaturalLanguageSearch`
+
+**Architecture** (Dual LLM):
+1. **LLM Call 1** (`_execute_nl_search`): Typesense NL model extracts filters (price, stock, brand, size, color)
+2. **LLM Call 2** (`_classify_category_with_llm`): GPT-4o-mini analyzes retrieved products and classifies category
+
+**Key Methods**:
+- `search()`: Main entry point, orchestrates the dual LLM workflow
+- `_retrieve_semantic_results()`: Retrieves top 20 products using NL-extracted filters (no category yet)
+- `_extract_category_context()`: Builds context from retrieved products for LLM classification
+- `_classify_category_with_llm()`: Sends context to GPT-4o-mini, returns category + confidence + reasoning
+- `_search_with_category_filter()`: Re-executes search with RAG-detected category + NL filters
+- `_remove_category_filter()`: Prevents duplicate category filters
+
+**Conservative Rules** (prevents false positives):
+- Returns `null` for single-word attributes: "clear", "large", "sterile"
+- Returns `null` for brand-only queries: "Mercedes Scientific"
+- Returns `null` for highly ambiguous queries: "filters" (water/air/syringe?)
+- Default confidence threshold: 0.75
+
+**Model ID**:
+- Uses UUID: `9bb52abc-8bf8-4536-80de-8231e77fab14` (assigned by Typesense)
+- **Critical**: Must use the actual UUID, NOT the string ID "openai-gpt4o-mini"
+
+**Response Structure**:
+```python
+{
+    "results": [...],
+    "total": 25,
+    "query_time_ms": 4157,
+    "detected_category": "Products/Gloves & Apparel/Gloves",
+    "category_confidence": 0.85,
+    "category_applied": true,
+    "confidence_threshold": 0.75,
+    "typesense_query": {
+        "nl_extracted_query": "nitrile glove powder-free",
+        "nl_extracted_filters": "stock_status:=IN_STOCK && price:<30",
+        "llm_reasoning": "The query specifies 'nitrile gloves'...",
+        "category_applied": true,
+        "detected_category": "Products/Gloves & Apparel/Gloves"
+    }
+}
+```
+
+**Performance**:
+- **Query Time**: ~3.5-4.5 seconds (2x slower than single LLM)
+- **Cost**: ~$20 per 1,000 queries (2x cost of single LLM)
+- **Accuracy**: 84.6% on test dataset (3 improvements over baseline)
+
+**Debug Mode**:
+- Enable with `debug=true` in API request
+- Auto-enabled for localhost in frontend
+- Shows retrieval stats, LLM reasoning, confidence scores
+
+**Full Documentation**: See `docs/RAG_DUAL_LLM_APPROACH.md`
 
 ### src/setup_nl_model.py
 Registers the OpenAI model with Typesense for native NL search.
@@ -754,13 +853,25 @@ For questions or issues:
 
 ---
 
-**Last Updated**: 2025-10-15
+**Last Updated**: 2025-10-17
 
-**Project Status**: Production-ready with Neon database integration
+**Project Status**: Production-ready with RAG dual LLM approach
 
-**Version**: 2.1.0 (Hybrid Scalable Approach + Neon Database)
+**Version**: 2.2.0 (RAG Dual LLM Implementation)
 
 **Recent Changes**:
+
+**v2.2.0** (Oct 17, 2025):
+- ✅ **DUAL LLM RAG APPROACH**: Implemented RAG-based category classification
+- ✅ **84.6% accuracy** on test dataset (3 improvements over baseline)
+- ✅ Two-stage LLM workflow: NL filter extraction → RAG category classification
+- ✅ Conservative category detection with confidence thresholds
+- ✅ Fixed model ID resolution issue (UUID vs string ID)
+- ✅ Updated frontend to display combined RAG category + NL filters
+- ✅ Auto-enabled debug mode for localhost development
+- ✅ Created comprehensive documentation: `docs/RAG_DUAL_LLM_APPROACH.md`
+- ✅ Migrated from `search.py` to `search_rag.py` in production API
+- ✅ Improved handling of ambiguous queries ("clear", "filters", etc.)
 
 **v2.1.0** (Oct 15, 2025):
 - ✅ **SCALABILITY FIX**: Implemented hybrid approach for unlimited category support
