@@ -1,4 +1,11 @@
 """Flask API server for natural language search."""
+import sys
+from pathlib import Path
+
+# Add project root to Python path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from src.config import Config
