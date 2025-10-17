@@ -2,8 +2,8 @@
 import time
 import typesense
 from typing import Dict, Any, List
-from config import Config
-from models import SearchResponse, Product
+from src.config import Config
+from src.models import SearchResponse, Product
 
 # Validate configuration
 Config.validate()
