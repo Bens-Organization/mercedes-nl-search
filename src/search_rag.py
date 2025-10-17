@@ -63,8 +63,9 @@ class RAGNaturalLanguageSearch:
         self.typesense_client = typesense.Client(Config.get_typesense_config())
         self.collection_name = Config.TYPESENSE_COLLECTION_NAME
         self.openai_client = OpenAI(api_key=Config.OPENAI_API_KEY)
-        # Use the RAG-optimized NL model (ID from Typesense)
-        self.nl_model_id = "9bb52abc-8bf8-4536-80de-8231e77fab14"
+        # Use the RAG-optimized NL model
+        # Use string ID which should work across different Typesense instances
+        self.nl_model_id = "openai-gpt4o-mini"
 
     def search(
         self,
