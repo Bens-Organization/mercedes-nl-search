@@ -1,68 +1,85 @@
 # Mercedes Scientific Natural Language Search
 
-AI-powered natural language search for Mercedes Scientific products using **Hybrid Search** (Semantic + Keyword) with Typesense and OpenAI.
+AI-powered natural language search for Mercedes Scientific products using **RAG Dual LLM Approach** (Retrieval-Augmented Generation) with Typesense and OpenAI.
 
 ## Production Deployment
 
-**Status**: ✅ **LIVE**
+**Status**: ✅ **LIVE (v2.2.0)**
 
 - **Frontend**: [https://mercedes-nl-search.vercel.app](https://mercedes-nl-search.vercel.app)
 - **Backend API**: [https://mercedes-search-api.onrender.com](https://mercedes-search-api.onrender.com)
 - **Search Engine**: Typesense Cloud (8GB cluster)
 - **Database**: Neon PostgreSQL
-- **AI Models**: OpenAI GPT-4o-mini + text-embedding-3-small
+- **AI Models**: OpenAI GPT-4o-mini (dual LLM) + text-embedding-3-small
 
-**Deployed Stack**: 34,607 products indexed with full semantic search capabilities.
+**Deployed Stack**: 34,607 products indexed with full semantic search and intelligent category classification.
 
 For deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Features
 
-- 🔍 **Hybrid Search**: Combines semantic (meaning-based) and keyword search for best results
+- 🤖 **Dual LLM RAG Approach**: Two-stage AI processing for superior accuracy (84.6%)
+- 🔍 **Intelligent Category Classification**: Context-aware category detection with confidence scoring
 - 🧠 **Semantic Understanding**: Uses OpenAI embeddings to understand query intent
-- 🤖 **Smart Query Translation**: GPT-4o-mini converts natural language to structured filters
-- ⚡ **Fast Search**: Powered by Typesense vector + keyword search
+- 🎯 **Smart Query Translation**: GPT-4o-mini extracts filters, sorts, and attributes
+- ⚡ **Fast Hybrid Search**: Powered by Typesense vector + keyword search
 - 📊 **34,000+ Products**: Direct access via Neon PostgreSQL database (no API limits!)
-- 🎯 **Advanced Filtering**: Price, brand, size, color, stock, temporal queries
-- 🏷️ **Rich Product Attributes**: Brand, size, color, physical form, sale prices
+- 🏷️ **Advanced Filtering**: Price, brand, size, color, stock, temporal queries
+- 🎨 **Rich Product Attributes**: Brand, size, color, physical form, sale prices
 - 💰 **Cost Optimized**: Uses `text-embedding-3-small` for affordable semantic search
+- 🔒 **Conservative Classification**: Returns null for ambiguous queries (no false positives)
 
 ## Architecture
 
-### Hybrid Search Flow
+### RAG Dual LLM Flow
+
+The system uses a **two-stage AI processing approach** for superior search accuracy:
 
 ```mermaid
-flowchart TD
-    A["👤 User Query"] --> B["🤖 GPT-4o-mini<br/>Query Translation"]
-    B --> C["📊 Extract:<br/>filters, intents, criteria"]
-    C --> D["🔍 Typesense<br/>Hybrid Search"]
-    D --> E["🧠 Semantic Search<br/>(text-embedding-3-small)<br/>Finds products by meaning"]
-    D --> F["🔤 Keyword Search<br/>Finds products by exact/fuzzy match"]
-    E --> G["✨ Combined & Ranked Results"]
-    F --> G
+flowchart TB
+    A["👤 User Query<br/>nitrile gloves, powder-free, in stock, under $30"]
+    B["🤖 LLM Call 1: Query Translation<br/>Extracts: price, stock, brand, size, color"]
+    C["🔍 Retrieval Search<br/>20 products using Semantic + Keyword Search"]
+    D["🤖 LLM Call 2: RAG Category Classification<br/>Analyzes context<br/>Detects: Products/Gloves & Apparel/Gloves<br/>Confidence: 0.85"]
+    E["🎯 Final Search<br/>Combined filters: categories + price + stock"]
+    F["✨ Results<br/>3 relevant products"]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
 
     style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
     style B fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
-    style C fill:#f5f5f5,stroke:#616161,stroke-width:2px,color:#000
-    style D fill:#e8f5e9,stroke:#388e3c,stroke-width:3px,color:#000
-    style E fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
-    style F fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#000
-    style G fill:#e1bee7,stroke:#7b1fa2,stroke-width:3px,color:#000
+    style C fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000
+    style D fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
+    style E fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style F fill:#b2ebf2,stroke:#0097a7,stroke-width:3px,color:#000
 ```
 
-### Why Hybrid Search?
+**Full Documentation**: See [`docs/RAG_DUAL_LLM_APPROACH.md`](docs/RAG_DUAL_LLM_APPROACH.md)
 
-1. **Semantic Search**: Finds products by meaning
-   - "protective hand covering" → finds "gloves"
-   - "liquid measurement tool" → finds "pipettes"
-   - "slides for microscopy" → finds "microscope slides"
+### Why RAG Dual LLM?
 
-2. **Keyword Search**: Finds exact matches
-   - SKU numbers, product codes
-   - Specific brand names
-   - Exact product names
+1. **Two-Stage Intelligence**:
+   - **Stage 1**: NL model extracts filters (price, stock, attributes)
+   - **Stage 2**: RAG analyzes retrieved products for category detection
 
-3. **Combined**: Best of both worlds with intelligent ranking
+2. **Context-Aware Classification**:
+   - LLM sees actual product context before deciding category
+   - Handles exact matches and semantic queries correctly
+   - Conservative on ambiguous queries (returns null when uncertain)
+
+3. **Superior Accuracy**:
+   - **84.6% accuracy** on test dataset
+   - Improved handling of edge cases vs. single LLM approach
+   - Transparent reasoning (debug mode shows LLM's decision process)
+
+4. **Hybrid Search Foundation**:
+   - **Semantic Search**: Finds products by meaning (embeddings)
+   - **Keyword Search**: Finds exact matches (SKUs, brands)
+   - **Combined Ranking**: Best of both worlds
 
 ## Prerequisites
 
@@ -439,19 +456,28 @@ mercedes-natural-language-search/
 │   ├── app.py                 # Flask API server
 │   ├── indexer_neon.py        # Neon database indexer (RECOMMENDED)
 │   ├── indexer.py            # GraphQL API indexer (LEGACY)
-│   ├── search.py             # Hybrid search logic
+│   ├── search_rag.py         # RAG dual LLM search (CURRENT - 84.6% accuracy)
+│   ├── search.py             # Single LLM search (LEGACY)
 │   ├── setup_nl_model.py     # Natural language model setup
 │   ├── config.py             # Configuration management
 │   └── models.py             # Pydantic data models
-├── tests/                     # Test files
+├── docs/
+│   ├── RAG_DUAL_LLM_APPROACH.md              # RAG implementation guide
+│   └── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison
+├── tests/
+│   ├── test_category_classification.py  # RAG test suite (26 cases)
+│   ├── category_test_cases.py           # Test dataset
+│   ├── EVALUATION_RESULTS_FINAL.md      # RAG evaluation results
+│   ├── EVALUATION_RESULTS.md            # Initial evaluation
+│   └── FINAL_SUMMARY.md                 # Implementation summary
 ├── database/                  # Exported product data
 ├── frontend-next/            # Next.js frontend
 │   ├── app/
-│   ├── components/
+│   │   ├── page.tsx          # Main search page (RAG integration)
+│   │   └── components/
 │   └── package.json
 ├── requirements.txt          # Python dependencies
 ├── .env.example             # Environment variables template
-├── start-ui.sh              # Quick frontend starter script
 ├── README.md                # This file
 ├── DEPLOYMENT.md            # Deployment guide
 └── CLAUDE.md                # AI assistant context
