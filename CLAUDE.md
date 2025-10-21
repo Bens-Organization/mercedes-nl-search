@@ -376,10 +376,11 @@ The system prompt uses a **minimal, schema-driven approach** that scales to unli
 
 **Key Characteristics**:
 - ✅ **No hardcoded category mappings** - relies on semantic search instead
-- ✅ **Filter rules only** - brand, size, color, price, stock, temporal
+- ✅ **Conservative filtering** - only price, stock, special_price, temporal (reliable fields)
+- ✅ **Semantic attributes** - brand, size, color go in query (not strict filters)
 - ✅ **~2,300 characters** (~574 tokens) - stays constant regardless of catalog size
 - ✅ **Scales to 100s-1000s of categories** without prompt bloat
-- ✅ **7 focused examples** demonstrating filter extraction
+- ✅ **13 focused examples** demonstrating filter extraction and semantic matching
 
 **Why This Approach?**:
 ```
@@ -389,27 +390,40 @@ Traditional Approach (DOESN'T SCALE):
 ├─ 100+ categories = ~20K chars (10x increase!)
 └─ ❌ Token limits, higher costs, slower responses
 
-Hybrid Approach (SCALES INFINITELY):
+Conservative Hybrid Approach (SCALES INFINITELY):
 ├─ NO category mappings in prompt
-├─ Semantic search handles product type matching
-├─ Filter extraction for exact attributes
-└─ ✅ Constant prompt size, fast, accurate
+├─ Semantic search handles product types AND attributes (color, size, brand)
+├─ Filter extraction ONLY for reliable fields (price, stock, special_price, temporal)
+└─ ✅ Constant prompt size, fast, accurate, better recall
 ```
 
-**Supported Filter Extraction**:
+**Conservative Filter Extraction** (Reliable Fields Only):
 ```
 "nitrile gloves under $30" → price filter
-"Mercedes Scientific pipettes in stock" → brand + stock filters
-"clear liquid chemicals 1 gallon" → color + size filters
+"pipettes in stock" → stock filter
 "products on sale under $50" → special_price filter
 "latest microscopes" → temporal sort (created_at:desc)
-"white lab coats size large" → color + size filters
 ```
+
+**Semantic Search Handling** (No Strict Filtering):
+```
+"blue gloves" → q: "blue glove" (semantic search, not color:=Blue filter)
+"Mercedes Scientific pipettes" → q: "Mercedes Scientific pipette" (semantic, not brand filter)
+"clear chemicals 1 gallon" → q: "clear chemical 1 gallon" (semantic, not color/size filters)
+"white lab coats size large" → q: "white lab coat large" (semantic, not color/size filters)
+```
+
+**Why Conservative Approach?**:
+- ✅ **Better recall**: Attributes (color, size, brand) have shallow/incomplete data
+- ✅ **Strict filtering excludes products**: `color:=Blue` removes items without color field
+- ✅ **Semantic search is fuzzy**: Naturally boosts matching attributes without excluding nulls
+- ✅ **Reliable filters only**: price, stock, special_price, temporal (consistently populated)
 
 **How Categories Are Handled**:
 - Product types go in `q` field: "glove", "pipette", "microscope"
-- Typesense's semantic search matches to correct categories automatically
-- No need to maintain category mapping lists!
+- Attributes go in `q` field: "blue", "large", "Mercedes Scientific"
+- Typesense's semantic search matches to correct categories and attributes automatically
+- No need to maintain category or attribute mapping lists!
 
 **Usage**:
 ```bash
@@ -847,14 +861,14 @@ curl -X POST http://localhost:5001/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "your query here"}'
 
-# 7. Test new filters (brand, size, color, temporal)
+# 7. Test conservative filtering (reliable filters + semantic attributes)
 curl -X POST http://localhost:5001/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "latest microscopes"}'
 
 curl -X POST http://localhost:5001/api/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "Mercedes Scientific nitrile gloves size medium"}'
+  -d '{"query": "blue gloves powder-free"}'  # Color uses semantic search, not strict filter
 
 # 8. Check health
 curl http://localhost:5001/health
@@ -892,13 +906,22 @@ For questions or issues:
 
 ---
 
-**Last Updated**: 2025-10-17
+**Last Updated**: 2025-10-21
 
 **Project Status**: Production-ready with RAG dual LLM approach
 
-**Version**: 2.2.0 (RAG Dual LLM Implementation)
+**Version**: 2.2.1 (Conservative Filtering Approach)
 
 **Recent Changes**:
+
+**v2.2.1** (Oct 21, 2025):
+- ✅ **CONSERVATIVE FILTERING**: Switched from aggressive to conservative attribute filtering
+- ✅ **Better recall**: Color, size, brand now use semantic search (not strict filters)
+- ✅ **Reliable filters only**: Price, stock, special_price, temporal (consistently populated fields)
+- ✅ **Fixed low result counts**: "blue gloves" now returns all gloves (semantic boost), not just those with color:=Blue
+- ✅ **Shallow data handling**: Attributes with incomplete data won't exclude products
+- ✅ **Updated system prompt**: Removed color/size/brand from filter extraction rules
+- ✅ **Documentation updates**: CLAUDE.md and README.md reflect conservative approach
 
 **v2.2.0** (Oct 17, 2025):
 - ✅ **DUAL LLM RAG APPROACH**: Implemented RAG-based category classification

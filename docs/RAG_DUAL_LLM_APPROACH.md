@@ -1,7 +1,7 @@
 # RAG Dual LLM Approach Documentation
 
-**Version**: 2.2.0
-**Date**: October 17, 2025
+**Version**: 2.2.1 (Conservative Filtering)
+**Date**: October 21, 2025
 **Status**: ✅ Production-Ready
 
 ## Overview
@@ -18,7 +18,7 @@ This approach achieves **84.6% accuracy** on our test dataset while providing tr
 ```mermaid
 flowchart TB
     A["👤 User Query<br/>nitrile gloves, powder-free, in stock, under $30"]
-    B["🤖 LLM Call 1: NL Query Translation<br/>Typesense NL Model<br/>Extracts: price, stock, brand, size, color"]
+    B["🤖 LLM Call 1: NL Query Translation<br/>Typesense NL Model<br/>Conservative: Extracts price, stock, special_price, temporal"]
     C["📊 Extracted Parameters<br/>q: nitrile glove powder-free<br/>filter_by: stock_status:=IN_STOCK && price:<30"]
     D["🔍 Retrieval Search<br/>20 products with NL filters<br/>NO category filter yet"]
     E["📦 Context Extraction<br/>Group by categories<br/>Sample products per category"]
@@ -55,18 +55,23 @@ flowchart TB
 **Model**: GPT-4o-mini-2024-07-18 (via Typesense)
 **Model ID**: UUID-based (e.g., `9bb52abc-8bf8-4536-80de-8231e77fab14`)
 
-**Purpose**: Extract non-category filters from natural language queries
+**Purpose**: Extract **reliable** filters from natural language queries (conservative approach)
 
-**Extracts**:
-- ✅ Price filters (`price:<30`, `price:[20..50]`)
+**Extracts (Reliable Fields Only)**:
+- ✅ Price filters (`price:<30`, `price:[20..50]`, `price:=20`)
 - ✅ Stock filters (`stock_status:=IN_STOCK`)
-- ✅ Brand filters (`brand:=Mercedes Scientific`)
-- ✅ Size filters (`size:=Large`)
-- ✅ Color filters (`color:=Blue`)
+- ✅ Special price filters (`special_price:>0` for "on sale")
 - ✅ Sort preferences (`price:asc`, `created_at:desc`)
 - ❌ **Does NOT extract category filters** (RAG handles this)
 
-**System Prompt**: RAG-optimized to avoid category extraction, allowing RAG to intelligently detect categories based on context.
+**Does NOT Extract (Semantic Search Instead)**:
+- 🔵 Brand (`brand:=Mercedes Scientific`) → Goes in `q` field as "Mercedes Scientific"
+- 🔵 Size (`size:=Large`) → Goes in `q` field as "large"
+- 🔵 Color (`color:=Blue`) → Goes in `q` field as "blue"
+
+**Why Conservative?** Attributes (color, size, brand) have incomplete data in the catalog. Strict filtering (`color:=Blue`) would exclude products without a color field. Semantic search naturally boosts matching attributes without excluding nulls.
+
+**System Prompt**: RAG-optimized, conservative filtering to avoid excluding products with incomplete attribute data.
 
 ### 2. RAG Search Engine (LLM Call 2)
 
