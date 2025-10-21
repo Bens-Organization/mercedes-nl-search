@@ -292,7 +292,7 @@ class RAGNaturalLanguageSearch:
             "nl_query": "true",  # LLM Call 1: Extract filters, sorts, etc.
             "nl_model_id": self.nl_model_id,
             "per_page": retrieval_count,
-            "sort_by": "_text_match:desc,price:asc",  # Default, can be overridden by NL
+            "sort_by": "brand_priority:desc,_text_match:desc,price:asc",  # In-house brands first
         }
 
         # Enable debug to see NL query parsing
@@ -602,8 +602,16 @@ Query: "Ansell gloves ANS 5789911" → {{"category": "Products/Gloves & Apparel/
         else:
             combined_filter = category_filter
 
-        # Use NL-extracted sort if available, otherwise default
-        sort_by = parsed_params.get("sort_by", "_text_match:desc,price:asc")
+        # Always prioritize in-house brands first, then apply other sorting
+        nl_sort = parsed_params.get("sort_by", "")
+
+        if nl_sort:
+            # User has specific sorting preference (price, temporal, etc.)
+            # In-house brands still appear first, then apply their requested sort
+            sort_by = f"brand_priority:desc,{nl_sort}"
+        else:
+            # Default: brand priority first, then relevance, then price
+            sort_by = "brand_priority:desc,_text_match:desc,price:asc"
 
         # Use NL-extracted query text if available, otherwise original query
         query_text = parsed_params.get("q", query)
