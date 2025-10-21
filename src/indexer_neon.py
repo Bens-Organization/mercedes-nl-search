@@ -44,6 +44,7 @@ class NeonProductIndexer:
                 {"name": "categories", "type": "string[]", "facet": True},
                 # Product attributes from additional_attributes
                 {"name": "brand", "type": "string", "facet": True, "optional": True},
+                {"name": "brand_priority", "type": "int32", "optional": True, "sort": True},  # Priority for in-house brands
                 {"name": "size", "type": "string", "facet": True, "optional": True},
                 {"name": "color", "type": "string", "facet": True, "optional": True},
                 {"name": "physical_form", "type": "string", "facet": True, "optional": True},
@@ -209,6 +210,40 @@ class NeonProductIndexer:
             print(f"✗ Error fetching from Neon: {e}")
             raise
 
+    def _calculate_brand_priority(self, brand: str, product_name: str = None) -> int:
+        """
+        Calculate brand priority for sorting.
+
+        In-house brands (Mercedes Scientific, Tanner Scientific) get highest priority.
+        Checks both brand field AND product name for brand detection.
+
+        Args:
+            brand: Brand name from additional_attributes
+            product_name: Product name (optional, used as fallback)
+
+        Returns:
+            Priority score (higher = more important)
+            - 100: Mercedes Scientific
+            - 90: Tanner Scientific
+            - 50: Other brands
+            - 0: No brand
+        """
+        # Check brand field first
+        brand_lower = (brand or "").lower().strip()
+        name_lower = (product_name or "").lower().strip()
+
+        # In-house brands (highest priority)
+        # Check both brand field and product name
+        if "mercedes scientific" in brand_lower or "mercedes scientific" in name_lower:
+            return 100
+        elif "tanner scientific" in brand_lower or "tanner scientific" in name_lower:
+            return 90
+        elif brand:  # Has brand field but not in-house
+            return 50
+        else:
+            # No brand
+            return 0
+
     def _clean_and_deduplicate_categories(self, raw_categories: List[str]) -> List[str]:
         """
         Clean and deduplicate category names.
@@ -331,6 +366,9 @@ class NeonProductIndexer:
                 except:
                     pass
 
+            # Calculate brand priority (check both brand field and product name)
+            brand_priority = self._calculate_brand_priority(specs.get('brand'), name)
+
             return {
                 "product_id": sku,  # Use SKU as product_id
                 "sku": sku,
@@ -347,6 +385,7 @@ class NeonProductIndexer:
                 "categories": category_list,
                 # Product attributes from additional_attributes
                 "brand": specs.get('brand'),
+                "brand_priority": brand_priority,  # Priority for in-house brands
                 "size": specs.get('size'),
                 "color": specs.get('color'),
                 "physical_form": specs.get('physical_form'),
