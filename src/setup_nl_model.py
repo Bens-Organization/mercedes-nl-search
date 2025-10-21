@@ -28,17 +28,20 @@ def setup_nl_model():
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
 
     # RAG-optimized system prompt - extracts filters but NOT categories (RAG handles categories)
+    # Conservative approach: Only filter by reliable fields (price, stock, special_price, temporal)
+    # Attributes (color, size, brand) go in "q" for semantic search (data too shallow for strict filtering)
     system_prompt = """Extract search parameters from natural language queries for medical/scientific products.
 
 NOTE: This search uses RAG (Retrieval-Augmented Generation) for category detection.
-DO NOT extract category filters - only extract price, stock, and product attribute filters.
+DO NOT extract category filters - only extract price, stock, and special_price filters.
 
 QUERY FIELD ("q"):
 - Product types in SINGULAR form: "glove" not "gloves", "pipette" not "pipettes"
 - Material descriptors: "nitrile", "latex", "stainless steel", "glass"
 - General features: "sterile", "powder-free", "disposable", "surgical"
+- Product attributes: "blue", "yellow", "large", "medium", "Mercedes Scientific"
 - Technical specifications: "10μL capacity", "100mL volume", "0.5mm thickness"
-- KEEP product type in "q" for semantic search (e.g., "nitrile glove", "pipette")
+- KEEP all descriptive words in "q" for semantic search
 
 FILTER FIELD ("filter_by") - Extract ONLY these filter types:
 
@@ -57,15 +60,6 @@ FILTER FIELD ("filter_by") - Extract ONLY these filter types:
 2. Stock filters (extract when stock mentioned):
    - "in stock" or "available" → stock_status:=IN_STOCK
 
-3. Product attributes (extract when present):
-   - Brand: "Mercedes Scientific" or "Tanner Scientific" → brand:=Mercedes Scientific
-   - Size: "size large", "large size", or "large" (when modifying product) → size:=Large
-   - Color: ALWAYS extract color words as filters:
-     * Common colors: yellow, blue, white, clear, green, red, black, orange, pink, purple
-     * Examples: "yellow slides" → color:=Yellow, "blue gloves" → color:=Blue
-     * Format: Capitalize first letter (Yellow, Blue, White, Clear, etc.)
-     * Remove color from "q" after extracting as filter
-
 SORT FIELD ("sort_by"):
 - "cheapest" or "lowest price" → price:asc
 - "most expensive" or "highest price" → price:desc
@@ -73,39 +67,39 @@ SORT FIELD ("sort_by"):
 - "popular" or "most popular" or "best selling" → DO NOT use sort_by (rely on relevance scoring)
 
 OPERATOR RULES:
-- Exact match: := (e.g., brand:=Mercedes Scientific)
+- Exact match: := (e.g., price:=20)
 - Range: : (e.g., price:<50)
 - Combine filters: && (e.g., price:<50 && stock_status:=IN_STOCK)
 
 EXAMPLES (NO category filters - RAG handles categories):
 "nitrile gloves under $30" → {"q": "nitrile glove", "filter_by": "price:<30"}
-"yellow slides" → {"q": "slide", "filter_by": "color:=Yellow"}
-"yellow slides under $220" → {"q": "slide", "filter_by": "color:=Yellow && price:<220"}
-"blue gloves powder-free" → {"q": "glove powder-free", "filter_by": "color:=Blue"}
+"yellow slides" → {"q": "yellow slide"}
+"yellow slides under $220" → {"q": "yellow slide", "filter_by": "price:<220"}
+"blue gloves powder-free" → {"q": "blue glove powder-free"}
 "pipettes in stock" → {"q": "pipette", "filter_by": "stock_status:=IN_STOCK"}
-"clear test tubes" → {"q": "test tube", "filter_by": "color:=Clear"}
+"clear test tubes" → {"q": "clear test tube"}
 "nitrile gloves that costs $20" → {"q": "nitrile glove", "filter_by": "price:=20"}
 "pipettes with at least 10μL capacity under $500" → {"q": "pipette 10μL capacity", "filter_by": "price:<500"}
 "nitrile gloves powder-free in stock under $30" → {"q": "nitrile glove powder-free", "filter_by": "stock_status:=IN_STOCK && price:<30"}
 "beakers under $50" → {"q": "beaker", "filter_by": "price:<50"}
 "cheapest centrifuge" → {"q": "centrifuge", "sort_by": "price:asc"}
-"white lab coats size large" → {"q": "lab coat", "filter_by": "color:=White && size:=Large"}
-"Mercedes Scientific nitrile gloves size medium" → {"q": "nitrile glove", "filter_by": "brand:=Mercedes Scientific && size:=Medium"}
+"white lab coats size large" → {"q": "white lab coat large"}
+"Mercedes Scientific nitrile gloves size medium" → {"q": "Mercedes Scientific nitrile glove medium"}
+"on sale microscopes" → {"q": "microscope", "filter_by": "special_price:>0"}
 
 CRITICAL RULES:
 1. DO NOT extract category filters - RAG handles category detection
-2. ALWAYS keep product type in "q" for semantic search (e.g., "nitrile glove", "pipette")
-3. ALWAYS extract color as filter when color words appear:
-   - "yellow slides" → {"q": "slide", "filter_by": "color:=Yellow"} (NOT {"q": "yellow slide"})
-   - "blue gloves" → {"q": "glove", "filter_by": "color:=Blue"} (NOT {"q": "blue glove"})
-   - Remove color word from "q" after extracting
+2. DO NOT extract color/size/brand as filters - keep them in "q" for semantic search
+   - Data is too shallow for strict attribute filtering
+   - Semantic search handles color, size, brand matching naturally
+3. ALWAYS keep product type in "q" for semantic search (e.g., "nitrile glove", "pipette")
 4. ALWAYS extract price filter when ANY price appears:
    - DEFAULT: "costs $X", "cost $X", "priced $X" → price:=X (EXACT match)
    - RANGE: "under $X" → price:<X, "over $X" → price:>X
    - BETWEEN: "$X to $Y" → price:[X..Y]
 5. ALWAYS extract stock filter when stock mentioned (in stock → stock_status:=IN_STOCK)
-6. Technical specs (10μL, 100mL) stay in "q" - NEVER as filters
-7. Extract size/brand as filters when present (e.g., "size large", "Mercedes Scientific")
+6. ALWAYS extract special_price filter for "on sale", "discounted" → special_price:>0
+7. Technical specs (10μL, 100mL) stay in "q" - NEVER as filters
 8. NEVER use sort_by for "popular", "most popular", "best selling" - rely on relevance scoring
 
 IMPORTANT: "costs", "cost", "priced" without range words = EXACT price (price:=X), NOT under (price:<X)"""
