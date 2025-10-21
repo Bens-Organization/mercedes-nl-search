@@ -145,7 +145,7 @@ python src/setup_nl_model.py
 
 This enables natural language features like:
 - "latest microscopes" → temporal sorting
-- "Mercedes Scientific gloves" → brand filtering
+- "Mercedes Scientific gloves" → semantic brand matching (not strict filter)
 - "products on sale" → special_price filtering
 
 ### 4. Index Products with Embeddings
@@ -363,16 +363,22 @@ The system understands natural language and extracts:
 "surgical scissors under $100"
 ```
 
-### Advanced Filter Queries (NEW)
+### Advanced Queries (NEW - Conservative Filtering Approach)
 ```
-"Mercedes Scientific nitrile gloves size medium"  → brand + size filters
-"clear liquid chemicals 1 gallon"                → color + physical_form + size
-"white lab coats size large"                     → color + size filters
-"products on sale under $50"                     → special_price filter
+# Reliable filters (price, stock, special_price, temporal)
+"products on sale under $50"                     → special_price + price filters
 "latest microscopes"                             → temporal sort (created_at)
 "recently updated reagents"                      → temporal sort (updated_at)
-"in stock items with qty > 50"                   → stock + quantity filters
+"pipettes in stock under $100"                   → stock + price filters
+
+# Semantic matching (color, size, brand in query - not strict filters)
+"Mercedes Scientific nitrile gloves size medium" → semantic brand + size matching
+"clear liquid chemicals 1 gallon"                → semantic color + size matching
+"white lab coats size large"                     → semantic color + size matching
+"blue gloves powder-free"                        → semantic color matching
 ```
+
+**Why Conservative?** Attributes (color, size, brand) have incomplete data. Semantic matching provides better recall without excluding products with missing attributes.
 
 ### Semantic Queries (powered by embeddings)
 ```
