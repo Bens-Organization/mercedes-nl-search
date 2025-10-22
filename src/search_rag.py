@@ -288,7 +288,8 @@ class RAGNaturalLanguageSearch:
         """
         search_params = {
             "q": query,
-            "query_by": "name,description,short_description,sku,categories",
+            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
+            "query_by_weights": "100,100,4,4,3,3,1",  # Extreme priority to original fields, normalized only assist when original fails
             "nl_query": "true",  # LLM Call 1: Extract filters, sorts, etc.
             "nl_model_id": self.nl_model_id,
             "per_page": retrieval_count,
@@ -329,7 +330,8 @@ class RAGNaturalLanguageSearch:
             try:
                 fallback_params = {
                     "q": query,
-                    "query_by": "name,description,short_description,sku,categories",
+                    "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
+                    "query_by_weights": "100,100,4,4,3,3,1",
                     "per_page": retrieval_count,
                 }
                 results = self.typesense_client.collections[self.collection_name].documents.search(
@@ -618,7 +620,8 @@ Query: "Ansell gloves ANS 5789911" → {{"category": "Products/Gloves & Apparel/
 
         search_params = {
             "q": query_text,
-            "query_by": "name,description,short_description,sku,categories",
+            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
+            "query_by_weights": "100,100,4,4,3,3,1",  # Extreme priority to original fields, normalized only assist when original fails
             "filter_by": combined_filter,
             "per_page": max_results,
             "sort_by": sort_by,
