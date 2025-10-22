@@ -30,8 +30,34 @@ class NeonProductIndexer:
             "name": self.collection_name,
             "fields": [
                 {"name": "product_id", "type": "string"},  # Using SKU as product_id
-                {"name": "sku", "type": "string"},
-                {"name": "name", "type": "string", "sort": True},
+                {
+                    "name": "sku",
+                    "type": "string",
+                    "token_separators": [" ", "-", ".", "/"],  # Split by space, dash, dot, slash
+                    "infix": True  # Enable partial matching within tokens
+                },
+                {
+                    "name": "sku_normalized",
+                    "type": "string",
+                    "optional": True,
+                    "index": True,  # Make searchable for exact normalized matches (no separators)
+                    "infix": True,  # Enable prefix/substring matching
+                },
+                {
+                    "name": "name",
+                    "type": "string",
+                    "sort": True,
+                    "token_separators": [" ", "-", "/"],  # Split by space, dash, slash
+                    "infix": True  # Enable partial matching for model names
+                },
+                {
+                    "name": "name_normalized",
+                    "type": "string",
+                    "optional": True,
+                    "index": True,  # Make searchable for exact normalized matches
+                    "token_separators": [" "],  # Tokenize on spaces
+                    "infix": True,  # Enable partial matching within tokens
+                },
                 {"name": "url_key", "type": "string"},
                 {"name": "stock_status", "type": "string", "facet": True},
                 {"name": "product_type", "type": "string", "facet": True},
@@ -71,12 +97,27 @@ class NeonProductIndexer:
         }
 
         try:
-            # Delete existing collection if it exists
+            # Check if collection already exists
+            collection_exists = False
             try:
-                self.typesense_client.collections[self.collection_name].delete()
-                print(f"✓ Deleted existing collection: {self.collection_name}")
+                self.typesense_client.collections[self.collection_name].retrieve()
+                collection_exists = True
             except Exception:
                 pass
+
+            if collection_exists:
+                print(f"\n⚠  Collection '{self.collection_name}' already exists")
+                print(f"⚠  This will DELETE all indexed products and re-create the collection")
+
+                # Ask user for confirmation
+                response = input("\nDo you want to delete and recreate it? (y/n): ")
+                if response.lower() != 'y':
+                    print("✓ Keeping existing collection (no changes)")
+                    return
+
+                # Delete existing collection
+                self.typesense_client.collections[self.collection_name].delete()
+                print(f"✓ Deleted existing collection: {self.collection_name}")
 
             # Create new collection
             self.typesense_client.collections.create(schema)
@@ -298,6 +339,47 @@ class NeonProductIndexer:
 
         return unique_categories
 
+    def _normalize_sku(self, text: str) -> str:
+        """
+        Normalize SKU for exact matching.
+        Removes ALL separators (including spaces), converts to lowercase.
+
+        Examples:
+            "TNR 700S" → "tnr700s"
+            "TNR-700S" → "tnr700s"
+            "K83.913" → "k83913"
+        """
+        if not text:
+            return ""
+        # Remove ALL separators including spaces, then lowercase
+        normalized = text.replace(" ", "").replace("-", "").replace(".", "").replace("/", "").replace(",", "").lower()
+        return normalized
+
+    def _normalize_name(self, text: str) -> str:
+        """
+        Normalize product name for flexible searching.
+        Splits camelCase, keeps spaces for tokenization, removes other separators, converts to lowercase.
+
+        Examples:
+            "Blu-Touch" → "blu touch"  (dash → space, keeps tokenization)
+            "BluTouch" → "blu touch"  (camelCase split)
+            "Gloves, Nitrile, BluTouch" → "gloves nitrile blu touch"
+        """
+        if not text:
+            return ""
+
+        # Step 1: Split camelCase (insert space before capital letters)
+        import re
+        # Insert space before uppercase letters that follow lowercase letters
+        text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+
+        # Step 2: Replace separators with spaces, then lowercase
+        normalized = text.replace("-", " ").replace(".", " ").replace("/", " ").replace(",", " ").lower()
+
+        # Step 3: Collapse multiple spaces into one
+        normalized = " ".join(normalized.split())
+        return normalized
+
     def _transform_neon_product(self, row) -> Dict[str, Any]:
         """Transform Neon database row to Typesense document."""
         try:
@@ -372,7 +454,9 @@ class NeonProductIndexer:
             return {
                 "product_id": sku,  # Use SKU as product_id
                 "sku": sku,
+                "sku_normalized": self._normalize_sku(sku),  # Remove ALL separators for exact matching
                 "name": name,
+                "name_normalized": self._normalize_name(name),  # Split camelCase + keep spaces for tokens
                 "url_key": url_key or "",
                 "stock_status": stock_status,
                 "product_type": product_type or "simple",
