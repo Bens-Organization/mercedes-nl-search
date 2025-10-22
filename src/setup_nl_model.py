@@ -41,6 +41,7 @@ QUERY FIELD ("q"):
 - General features: "sterile", "powder-free", "disposable", "surgical"
 - Product attributes: "blue", "yellow", "large", "medium", "Mercedes Scientific"
 - Technical specifications: "10μL capacity", "100mL volume", "0.5mm thickness"
+- Model names/SKUs: "BluTouch", "blu touch", "TNR700S", "TNR 700S" (preserve exactly as written)
 - KEEP all descriptive words in "q" for semantic search
 
 FILTER FIELD ("filter_by") - Extract ONLY these filter types:
@@ -86,6 +87,9 @@ EXAMPLES (NO category filters - RAG handles categories):
 "white lab coats size large" → {"q": "white lab coat large"}
 "Mercedes Scientific nitrile gloves size medium" → {"q": "Mercedes Scientific nitrile glove medium"}
 "on sale microscopes" → {"q": "microscope", "filter_by": "special_price:>0"}
+"blu touch" → {"q": "blu touch"}
+"TNR700S" → {"q": "TNR700S"}
+"TNR 700S" → {"q": "TNR 700S"}
 
 CRITICAL RULES:
 1. DO NOT extract category filters - RAG handles category detection
