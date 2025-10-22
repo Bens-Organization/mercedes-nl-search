@@ -40,7 +40,7 @@ export default function Home() {
   const [hasMore, setHasMore] = useState(false);
 
   const exampleQueries = [
-    'Nitrile gloves, powder-free, in stock, under $30',
+    'Gloves in stock under $50',
     'Pipettes with at least 10μL capacity, under $500',
     'Sterile surgical instruments, stainless steel',
     'Safety goggles with anti-fog coating',
