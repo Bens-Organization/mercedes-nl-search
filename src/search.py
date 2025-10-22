@@ -157,7 +157,8 @@ class NaturalLanguageSearch:
         """
         search_params = {
             "q": query,
-            "query_by": "name,description,short_description,sku,categories",
+            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
+            "query_by_weights": "100,100,4,4,3,3,1",  # Extreme priority to original fields, normalized only assist when original fails
             "nl_query": "true",  # Enable native NL search
             "nl_model_id": self.nl_model_id,
             "per_page": max_results,  # Default, will be overridden if NL query extracts a limit
@@ -209,7 +210,8 @@ class NaturalLanguageSearch:
             try:
                 fallback_params = {
                     "q": query,
-                    "query_by": "name,description,short_description,sku,categories",
+                    "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
+                    "query_by_weights": "100,100,4,4,3,3,1",
                     "per_page": max_results,
                 }
                 results = self.typesense_client.collections[self.collection_name].documents.search(
@@ -373,7 +375,8 @@ class NaturalLanguageSearch:
         try:
             search_params = {
                 "q": query,
-                "query_by": "name,description,short_description,sku,categories",
+                "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
+                "query_by_weights": "100,100,4,4,3,3,1",
                 "per_page": max_results,
             }
 
