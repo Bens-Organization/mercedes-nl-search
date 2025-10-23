@@ -107,11 +107,13 @@ src/
 
 docs/                   # Technical documentation
 ├── RAG_DUAL_LLM_APPROACH.md              # Comprehensive RAG implementation guide
-└── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison of approaches
+├── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison of approaches
+└── SYNONYM_TESTING_GUIDE.md              # Synonym testing documentation and verification
 
 tests/                  # Tests and evaluation results
 ├── test_category_classification.py  # RAG test suite (26 cases)
 ├── category_test_cases.py           # Test dataset
+├── test_synonyms.py                 # Comprehensive synonym testing (all-in-one)
 ├── EVALUATION_RESULTS_FINAL.md      # Detailed RAG evaluation results
 ├── EVALUATION_RESULTS.md            # Initial evaluation
 └── FINAL_SUMMARY.md                 # Executive implementation summary
@@ -904,7 +906,120 @@ curl http://localhost:5001/health
 
 # 9. Test NL search directly
 python src/search.py  # Runs test queries with debug output
+
+# 10. Setup synonyms (OPTIONAL - improves matching)
+python src/setup_synonyms.py          # Configure synonym groups
+python src/setup_synonyms.py --list   # List current synonyms
+python src/setup_synonyms.py --test   # Test synonym matching
+
+# 11. Test synonym behavior (comprehensive tests)
+./venv/bin/python3 tests/test_synonyms.py  # All synonym tests in one file
 ```
+
+## Synonym Handling
+
+The system uses a **three-layer approach** for synonym matching:
+
+### 1. Semantic Embeddings (Automatic)
+OpenAI's text-embedding-3-small naturally understands many synonyms:
+- ✅ **Works automatically**: No configuration needed
+- ✅ **Broad coverage**: Handles common scientific terms
+- ✅ **Examples**: "pipette" ≈ "pipettor", "protective" ≈ "safety"
+
+### 2. Typesense Synonyms (Explicit Control)
+For domain-specific terms, configure explicit synonym groups:
+- ✅ **Guaranteed matching**: PTFE ⟷ Teflon ⟷ Polytetrafluoroethylene
+- ✅ **35+ synonym groups**: Materials, equipment, measurements, common terms
+- ✅ **Easy management**: Add/remove synonym groups programmatically
+
+**Setup**:
+```bash
+# Configure all synonym groups
+python src/setup_synonyms.py
+
+# List current synonyms
+python src/setup_synonyms.py --list
+
+# Test synonym matching
+python src/setup_synonyms.py --test
+
+# Clear all synonyms
+python src/setup_synonyms.py --clear
+```
+
+**Example Synonym Groups**:
+```python
+# Materials
+"ptfe" ⟷ "teflon" ⟷ "polytetrafluoroethylene"
+"nitrile" ⟷ "nbr" ⟷ "nitrile rubber"
+"pvc" ⟷ "vinyl" ⟷ "polyvinyl chloride"
+
+# Equipment
+"pipette" ⟷ "pipettor" ⟷ "pipet" ⟷ "micropipette"
+"centrifuge" ⟷ "spinner" ⟷ "microcentrifuge"
+"autoclave" ⟷ "sterilizer" ⟷ "steam sterilizer"
+
+# Measurements
+"ml" ⟷ "milliliter" ⟷ "millilitre" ⟷ "mL"
+"mg" ⟷ "milligram" ⟷ "milligramme"
+
+# Common terms
+"sterile" ⟷ "aseptic" ⟷ "sterilized"
+"powder-free" ⟷ "powder free" ⟷ "powderfree" ⟷ "non-powdered"
+```
+
+**Adding Custom Synonyms**:
+Edit `src/setup_synonyms.py` → `get_synonym_groups()`:
+```python
+{
+    "id": "my-synonym-group",
+    "synonyms": ["term1", "term2", "term3"]
+}
+```
+
+### 3. Hybrid Approach (Best Results)
+The search combines both layers:
+- **Semantic search**: Handles fuzzy matching and related concepts
+- **Explicit synonyms**: Guarantees exact term equivalence
+- **NL query translation**: Expands queries intelligently
+
+**Example**:
+```
+Query: "ptfe gloves under $50"
+
+1. NL model extracts: q="ptfe gloves", filter_by="price:<50"
+2. Typesense expands: "ptfe" → ["ptfe", "teflon", "polytetrafluoroethylene"]
+3. Semantic search: Finds similar products via embeddings
+4. Results: All Teflon/PTFE gloves under $50
+```
+
+**Testing**:
+```bash
+# Run comprehensive synonym tests (all-in-one)
+./venv/bin/python3 tests/test_synonyms.py
+
+# This will test:
+# 1. Direct Typesense synonym matching
+# 2. Synonyms with real products (Pipette ⟷ Pipettor, Nitrile ⟷ NBR, etc.)
+# 3. NL model query extraction
+# 4. Product availability check
+# 5. Semantic vs explicit synonyms
+```
+
+**Important**: Test with products that exist in your catalog! For example:
+- ✅ "pipette tips" vs "pipettor tips" (both exist)
+- ✅ "nitrile gloves" vs "nbr gloves" (both exist)
+- ❌ NOT "ptfe gloves" (product doesn't exist in catalog)
+
+See `docs/SYNONYM_TESTING_GUIDE.md` for comprehensive testing documentation.
+
+### Why This Approach?
+
+| Method | Pros | Cons |
+|--------|------|------|
+| **Semantic only** | ✅ Works automatically<br>✅ Handles related concepts | ❌ May miss exact synonyms<br>❌ Less predictable |
+| **Synonyms only** | ✅ Guaranteed matching<br>✅ Explicit control | ❌ Requires maintenance<br>❌ Limited to exact terms |
+| **Hybrid (both)** | ✅ Best of both worlds<br>✅ Comprehensive coverage | ⚠️ Requires initial setup |
 
 ## Dependencies
 

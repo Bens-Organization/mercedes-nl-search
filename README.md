@@ -471,10 +471,12 @@ mercedes-natural-language-search/
 │   └── models.py             # Pydantic data models
 ├── docs/
 │   ├── RAG_DUAL_LLM_APPROACH.md              # RAG implementation guide
-│   └── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison
+│   ├── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison
+│   └── SYNONYM_TESTING_GUIDE.md              # Synonym testing documentation
 ├── tests/
 │   ├── test_category_classification.py  # RAG test suite (26 cases)
 │   ├── category_test_cases.py           # Test dataset
+│   ├── test_synonyms.py                 # Comprehensive synonym testing
 │   ├── EVALUATION_RESULTS_FINAL.md      # RAG evaluation results
 │   ├── EVALUATION_RESULTS.md            # Initial evaluation
 │   └── FINAL_SUMMARY.md                 # Implementation summary
