@@ -14,7 +14,9 @@ AI-powered natural language search for Mercedes Scientific products using **RAG 
 
 **Deployed Stack**: 34,607 products indexed with full semantic search and intelligent category classification.
 
-For deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
+**Documentation**:
+- **Production Deployment**: See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- **For AI Assistants**: See [CLAUDE.md](CLAUDE.md) for detailed project context
 
 ## Features
 

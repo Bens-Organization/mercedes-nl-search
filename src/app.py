@@ -41,6 +41,7 @@ def home():
         "status": "ok",
         "message": "Mercedes Scientific Natural Language Search API (RAG-powered)",
         "version": "2.0",
+        "environment": Config.ENVIRONMENT,
         "search_engine": "RAG-based category classification",
         "endpoints": {
             "search": "/api/search",
@@ -57,6 +58,7 @@ def health():
         collections = search_engine.typesense_client.collections.retrieve()
         return jsonify({
             "status": "healthy",
+            "environment": Config.ENVIRONMENT,
             "services": {
                 "api": "ok",
                 "typesense": "ok"
@@ -65,6 +67,7 @@ def health():
     except Exception as e:
         return jsonify({
             "status": "unhealthy",
+            "environment": Config.ENVIRONMENT,
             "services": {
                 "api": "ok",
                 "typesense": "error"
@@ -230,7 +233,8 @@ if __name__ == "__main__":
     print("Mercedes Scientific Natural Language Search API v2.0")
     print("RAG-Powered Category Classification")
     print("=" * 60)
-    print(f"Environment: {Config.FLASK_ENV}")
+    print(f"Environment: {Config.ENVIRONMENT}")
+    print(f"Flask Mode: {Config.FLASK_ENV}")
     print(f"Server: http://localhost:{Config.FLASK_PORT}")
     print(f"Typesense: {Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}")
     print(f"Collection: {Config.TYPESENSE_COLLECTION_NAME}")
