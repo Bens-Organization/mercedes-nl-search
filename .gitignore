@@ -70,3 +70,6 @@ typesense-data/
 # Exported NL model system prompt (generated files, organized by Typesense host)
 database/*/nl_model_system_prompt.txt
 database/*/nl_model_system_prompt.json
+
+# Local-only documentation
+.claude/commands/timeout.md
