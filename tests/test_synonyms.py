@@ -11,6 +11,13 @@ This script tests:
 Run with: ./venv/bin/python3 tests/test_synonyms.py
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 import typesense
 from src.config import Config
 from src.search_rag import RAGNaturalLanguageSearch
