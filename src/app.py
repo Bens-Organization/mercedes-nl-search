@@ -26,8 +26,10 @@ CORS(app, origins=[
     "http://localhost:5173",  # Local Vite dev
     "https://*.vercel.app",   # Vercel deployments
     "https://*.netlify.app",  # Netlify deployments
-    # Add your production domain here:
-    "https://mercedes-nl-search.vercel.app"
+    # Production domain:
+    "https://mercedes-nl-search.vercel.app",
+    # Staging domain:
+    "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app"
 ])
 
 # Initialize RAG search engine (improved category classification)
