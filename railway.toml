@@ -6,8 +6,8 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile.middleware"
 
 [deploy]
-# Start command (defined in Dockerfile, but can override here if needed)
-startCommand = "uvicorn src.openai_middleware:app --host 0.0.0.0 --port $PORT"
+# Start command is defined in Dockerfile.middleware CMD
+# Do NOT override here - let Dockerfile handle it for proper variable expansion
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "always"
