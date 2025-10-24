@@ -270,6 +270,10 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini") -
     """
     Call the real OpenAI API with enriched messages.
     """
+    # Strip "openai/" prefix if present (Typesense sends "openai/gpt-4o-mini")
+    if model.startswith("openai/"):
+        model = model.replace("openai/", "")
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
