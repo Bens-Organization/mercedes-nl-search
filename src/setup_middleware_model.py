@@ -35,7 +35,7 @@ TYPESENSE_API_KEY = Config.TYPESENSE_API_KEY
 
 # Model configuration
 MODEL_ID = "custom-rag-middleware"
-MIDDLEWARE_URL = "https://mercedes-search-api-middleware.onrender.com"  # Update this for production
+MIDDLEWARE_URL = "https://web-production-a5d93.up.railway.app"  # Update this for production
 
 
 def get_system_prompt() -> str:
