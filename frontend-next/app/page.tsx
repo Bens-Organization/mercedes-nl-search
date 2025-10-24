@@ -218,10 +218,17 @@ export default function Home() {
             const tq = stats.typesenseQuery;
             const parts = [];
 
-            // Use RAG extracted query if available, otherwise fall back to parsed
-            const extractedQuery = tq.nl_extracted_query || tq.parsed?.q || query;
-            const extractedFilters = tq.nl_extracted_filters || tq.parsed?.filter_by;
-            const extractedSort = tq.nl_extracted_sort || tq.parsed?.sort_by;
+            // Use middleware extracted query if available, otherwise fall back to other formats
+            const extractedQuery = tq.parsed_nl_query?.generated_params?.q ||
+                                   tq.nl_extracted_query ||
+                                   tq.parsed?.q ||
+                                   query;
+            const extractedFilters = tq.parsed_nl_query?.generated_params?.filter_by ||
+                                     tq.nl_extracted_filters ||
+                                     tq.parsed?.filter_by;
+            const extractedSort = tq.parsed_nl_query?.augmented_params?.sort_by ||
+                                  tq.nl_extracted_sort ||
+                                  tq.parsed?.sort_by;
 
             if (extractedQuery) parts.push(`"q":"${extractedQuery}"`);
 
