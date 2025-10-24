@@ -2,7 +2,7 @@
 # Specifies Python version and build process
 
 [phases.setup]
-nixPkgs = ["python39"]
+nixPkgs = ["python39", "python39Packages.pip"]
 
 [phases.install]
 cmds = ["python3 -m pip install -r requirements.txt"]
