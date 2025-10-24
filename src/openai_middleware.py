@@ -150,7 +150,7 @@ async def retrieve_products(query: str, limit: int = 20) -> List[Dict[str, Any]]
             "num_typos": 2,
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
-            "sort_by": "_text_match:desc,stock_status:desc"
+            "sort_by": "_text_match:desc"  # Removed stock_status:desc (not sortable)
         }
 
         result = typesense_client.collections['mercedes_products'].documents.search(search_params)
