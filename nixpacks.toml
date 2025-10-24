@@ -1,0 +1,11 @@
+# Nixpacks configuration for Railway deployment
+# Specifies Python version and build process
+
+[phases.setup]
+nixPkgs = ["python39", "pip"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "uvicorn src.openai_middleware:app --host 0.0.0.0 --port $PORT"
