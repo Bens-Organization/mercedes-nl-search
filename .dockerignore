@@ -1,0 +1,93 @@
+# Python cache and bytecode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing and coverage
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Logs
+*.log
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Frontend (not needed for middleware)
+frontend-next/
+node_modules/
+
+# Database exports (not needed for middleware)
+database/
+
+# Documentation (not needed for middleware)
+docs/
+*.md
+!requirements.txt
+
+# Tests (not needed for middleware)
+tests/
+
+# Scratch files
+scratch/
+
+# Scripts (not needed for middleware)
+scripts/
+
+# Deployment configs for other platforms
+Procfile
+railway.toml
+nixpacks.toml
+render.yaml
+
+# Keep only what's needed:
+# - src/ (application code)
+# - requirements.txt (dependencies)
+# - .env.example (if exists)
