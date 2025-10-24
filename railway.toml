@@ -1,16 +1,16 @@
 # Railway Configuration for OpenAI Middleware
-# This file tells Railway how to build and deploy the middleware service
+# Uses Dockerfile for reliable, controlled builds
 
 [build]
-builder = "nixpacks"
-buildCommand = "pip install -r requirements.txt"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.middleware"
 
 [deploy]
-# Start the FastAPI middleware on Railway's dynamic PORT
+# Start command (defined in Dockerfile, but can override here if needed)
 startCommand = "uvicorn src.openai_middleware:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "always"
 
 # Resource limits (Railway free tier: 512MB RAM, 0.5 vCPU)
-# These are defaults, can be adjusted in Railway dashboard
+# Can be adjusted in Railway dashboard if needed
