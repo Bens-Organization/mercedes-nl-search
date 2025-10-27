@@ -423,8 +423,9 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         params.pop("category_reasoning", None)
 
         # Update the response with modified parameters
-        # Use indent=2 to match OpenAI's formatting (Typesense's regex expects this format)
-        openai_response["choices"][0]["message"]["content"] = json.dumps(params, indent=2)
+        # CRITICAL FIX: Use single-line JSON (no indent) for Typesense's regex parser
+        # Multi-line JSON (indent=2) breaks the regex pattern matching
+        openai_response["choices"][0]["message"]["content"] = json.dumps(params)
 
         return openai_response
 
@@ -484,6 +485,19 @@ async def chat_completions(request: ChatCompletionRequest):
     5. Return search parameters to Typesense
     """
     try:
+        # ENTRY POINT LOGGING: Prove Typesense is calling us
+        import sys
+        timestamp = datetime.now().isoformat()
+        print(f"\n{'='*80}", flush=True)
+        print(f"[{timestamp}] INCOMING REQUEST FROM TYPESENSE", flush=True)
+        print(f"{'='*80}", flush=True)
+        print(f"[REQUEST] Model: {request.model}", flush=True)
+        print(f"[REQUEST] Messages: {len(request.messages)} messages", flush=True)
+        for i, msg in enumerate(request.messages):
+            preview = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+            print(f"  [{i}] {msg.role}: {preview}", flush=True)
+        sys.stdout.flush()
+
         # 1. Extract user query from messages
         user_query = extract_query_from_messages(request.messages)
 
@@ -506,7 +520,16 @@ async def chat_completions(request: ChatCompletionRequest):
         # 6. Apply category filter if LLM is confident
         openai_response = apply_category_filter(openai_response)
 
-        # 7. Return in OpenAI format (Typesense expects this)
+        # 7. EXIT LOGGING: Show exact response being sent to Typesense
+        response_body = json.dumps(openai_response)
+        content_preview = openai_response["choices"][0]["message"]["content"][:200] if openai_response.get("choices") else "N/A"
+        print(f"\n[RESPONSE] Status: 200 OK", flush=True)
+        print(f"[RESPONSE] Content length: {len(response_body)} bytes", flush=True)
+        print(f"[RESPONSE] Message content preview: {content_preview}...", flush=True)
+        print(f"{'='*80}\n", flush=True)
+        sys.stdout.flush()
+
+        # 8. Return in OpenAI format (Typesense expects this)
         return openai_response
 
     except ValueError as e:
