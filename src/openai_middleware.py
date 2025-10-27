@@ -140,7 +140,17 @@ async def retrieve_products(query: str, limit: int = 20) -> List[Dict[str, Any]]
     """
     Run retrieval search against Typesense to get relevant products.
     This search does NOT include category filters yet.
+
+    For validation/test queries, returns empty list to avoid circular dependency.
     """
+    # Detect validation queries (Typesense uses these during model registration)
+    validation_patterns = ['test', 'validation', 'ping', 'hello', 'check']
+    query_lower = query.lower().strip()
+
+    if query_lower in validation_patterns or len(query_lower) < 3:
+        print(f"[VALIDATION] Detected validation query: '{query}' - skipping Typesense retrieval")
+        return []
+
     try:
         search_params = {
             "q": query,
