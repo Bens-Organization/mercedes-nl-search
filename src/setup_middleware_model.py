@@ -102,45 +102,42 @@ OPERATOR RULES:
   "q": "search terms in singular form",
   "filter_by": "filters with && operators (empty string if none)",
   "sort_by": "field:direction (empty string if none)",
-  "per_page": 20,
-  "detected_category": "Full/Category/Path" or null,
-  "category_confidence": 0.0 to 1.0,
-  "category_reasoning": "Why this category was chosen or why null"
+  "per_page": 20
 }}
 
-CRITICAL: ALWAYS include ALL 7 fields above in EVERY response.
-- detected_category, category_confidence, and category_reasoning are MANDATORY
-- If no category applies, use null with confidence < 0.5 and explain why
-- Never omit these fields, even for simple queries
+CRITICAL: ALWAYS include ALL 4 fields above in EVERY response.
+- Return ONLY these 4 fields - no additional fields
+- filter_by must include category filter when confident about product type
+- Use backticks to escape category values: categories:=`Products/Gloves`
 
-EXAMPLES (All examples show complete response format):
+EXAMPLES (All examples show ONLY the 4 required fields):
 
 Query: "nitrile gloves under $30"
-Output: {{"q": "nitrile glove", "filter_by": "price:<30", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type match for nitrile gloves"}}
+Output: {{"q": "nitrile glove", "filter_by": "categories:=`Products/Gloves & Apparel/Gloves` && price:<30", "sort_by": "", "per_page": 20}}
 
 Query: "yellow slides"
-Output: {{"q": "yellow slide", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Equipment/Microscope Slides", "category_confidence": 0.8, "category_reasoning": "Product type 'slides' clearly indicates microscope slides"}}
+Output: {{"q": "yellow slide", "filter_by": "categories:=`Products/Lab Equipment/Microscope Slides`", "sort_by": "", "per_page": 20}}
 
 Query: "clear"
-Output: {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Single attribute word without product type, too ambiguous"}}
+Output: {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20}}
 
 Query: "Mercedes Scientific"
-Output: {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Brand name only, spans multiple categories"}}
+Output: {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20}}
 
 Query: "pipettes in stock"
-Output: {{"q": "pipette", "filter_by": "stock_status:=IN_STOCK", "sort_by": "", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Clear product type match for pipettes"}}
+Output: {{"q": "pipette", "filter_by": "categories:=`Products/Pipettes` && stock_status:=IN_STOCK", "sort_by": "", "per_page": 20}}
 
 Query: "nitrile gloves that costs $20"
-Output: {{"q": "nitrile glove", "filter_by": "price:=20", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Specific product type with exact price"}}
+Output: {{"q": "nitrile glove", "filter_by": "categories:=`Products/Gloves & Apparel/Gloves` && price:=20", "sort_by": "", "per_page": 20}}
 
 Query: "beakers under $50"
-Output: {{"q": "beaker", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Glassware/Beakers", "category_confidence": 0.8, "category_reasoning": "Product type 'beakers' with price filter"}}
+Output: {{"q": "beaker", "filter_by": "categories:=`Products/Lab Glassware/Beakers` && price:<50", "sort_by": "", "per_page": 20}}
 
 Query: "cheapest centrifuge"
-Output: {{"q": "centrifuge", "filter_by": "", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Lab Equipment/Centrifuges", "category_confidence": 0.85, "category_reasoning": "Product type 'centrifuge' with price sort"}}
+Output: {{"q": "centrifuge", "filter_by": "categories:=`Products/Lab Equipment/Centrifuges`", "sort_by": "price:asc", "per_page": 20}}
 
 Query: "on sale microscopes"
-Output: {{"q": "microscope", "filter_by": "special_price:>0", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Equipment/Microscopes", "category_confidence": 0.85, "category_reasoning": "Product type 'microscopes' with sale filter"}}
+Output: {{"q": "microscope", "filter_by": "categories:=`Products/Lab Equipment/Microscopes` && special_price:>0", "sort_by": "", "per_page": 20}}
 
 CRITICAL RULES:
 1. DO NOT extract color/size/brand as filters - keep them in "q" for semantic search
