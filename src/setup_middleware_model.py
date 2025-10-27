@@ -99,8 +99,10 @@ OPERATOR RULES:
 
 EXAMPLES (Conservative filtering + RAG category detection):
 
+NOTE: ALL responses MUST include detected_category, category_confidence, and category_reasoning fields.
+
 Query: "nitrile gloves under $30"
-Output: {"q": "nitrile glove", "filter_by": "price:<30"}
+Output: {"q": "nitrile glove", "filter_by": "price:<30", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type match for nitrile gloves"}
 
 Query: "yellow slides"
 Output: {"q": "yellow slide"}
