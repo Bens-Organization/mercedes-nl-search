@@ -414,7 +414,8 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             print(f"[RAG] Reasoning: {category_reasoning}")
 
         # Update the response with modified parameters
-        openai_response["choices"][0]["message"]["content"] = json.dumps(params)
+        # Use indent=2 to match OpenAI's formatting (Typesense's regex expects this format)
+        openai_response["choices"][0]["message"]["content"] = json.dumps(params, indent=2)
 
         return openai_response
 
