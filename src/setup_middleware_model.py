@@ -97,51 +97,50 @@ OPERATOR RULES:
 - Range: : (e.g., price:<50)
 - Combine filters: && (e.g., price:<50 && stock_status:=IN_STOCK)
 
-EXAMPLES (Conservative filtering + RAG category detection):
+**RESPONSE FORMAT** (MANDATORY - EVERY response must use this format):
+{{
+  "q": "search terms in singular form",
+  "filter_by": "filters with && operators (empty string if none)",
+  "sort_by": "field:direction (empty string if none)",
+  "per_page": 20,
+  "detected_category": "Full/Category/Path" or null,
+  "category_confidence": 0.0 to 1.0,
+  "category_reasoning": "Why this category was chosen or why null"
+}}
 
-NOTE: ALL responses MUST include detected_category, category_confidence, and category_reasoning fields.
+CRITICAL: ALWAYS include ALL 7 fields above in EVERY response.
+- detected_category, category_confidence, and category_reasoning are MANDATORY
+- If no category applies, use null with confidence < 0.5 and explain why
+- Never omit these fields, even for simple queries
+
+EXAMPLES (All examples show complete response format):
 
 Query: "nitrile gloves under $30"
-Output: {"q": "nitrile glove", "filter_by": "price:<30", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type match for nitrile gloves"}
+Output: {{"q": "nitrile glove", "filter_by": "price:<30", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type match for nitrile gloves"}}
 
 Query: "yellow slides"
-Output: {"q": "yellow slide"}
+Output: {{"q": "yellow slide", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Equipment/Microscope Slides", "category_confidence": 0.8, "category_reasoning": "Product type 'slides' clearly indicates microscope slides"}}
 
-Query: "yellow slides under $220"
-Output: {"q": "yellow slide", "filter_by": "price:<220"}
+Query: "clear"
+Output: {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Single attribute word without product type, too ambiguous"}}
 
-Query: "blue gloves powder-free"
-Output: {"q": "blue glove powder-free"}
+Query: "Mercedes Scientific"
+Output: {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Brand name only, spans multiple categories"}}
 
 Query: "pipettes in stock"
-Output: {"q": "pipette", "filter_by": "stock_status:=IN_STOCK"}
-
-Query: "clear test tubes"
-Output: {"q": "clear test tube"}
+Output: {{"q": "pipette", "filter_by": "stock_status:=IN_STOCK", "sort_by": "", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Clear product type match for pipettes"}}
 
 Query: "nitrile gloves that costs $20"
-Output: {"q": "nitrile glove", "filter_by": "price:=20"}
-
-Query: "pipettes with at least 10μL capacity under $500"
-Output: {"q": "pipette 10μL capacity", "filter_by": "price:<500"}
-
-Query: "nitrile gloves powder-free in stock under $30"
-Output: {"q": "nitrile glove powder-free", "filter_by": "stock_status:=IN_STOCK && price:<30"}
+Output: {{"q": "nitrile glove", "filter_by": "price:=20", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Specific product type with exact price"}}
 
 Query: "beakers under $50"
-Output: {"q": "beaker", "filter_by": "price:<50"}
+Output: {{"q": "beaker", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Glassware/Beakers", "category_confidence": 0.8, "category_reasoning": "Product type 'beakers' with price filter"}}
 
 Query: "cheapest centrifuge"
-Output: {"q": "centrifuge", "sort_by": "price:asc"}
-
-Query: "white lab coats size large"
-Output: {"q": "white lab coat large"}
-
-Query: "Mercedes Scientific nitrile gloves size medium"
-Output: {"q": "Mercedes Scientific nitrile glove medium"}
+Output: {{"q": "centrifuge", "filter_by": "", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Lab Equipment/Centrifuges", "category_confidence": 0.85, "category_reasoning": "Product type 'centrifuge' with price sort"}}
 
 Query: "on sale microscopes"
-Output: {"q": "microscope", "filter_by": "special_price:>0"}
+Output: {{"q": "microscope", "filter_by": "special_price:>0", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Equipment/Microscopes", "category_confidence": 0.85, "category_reasoning": "Product type 'microscopes' with sale filter"}}
 
 CRITICAL RULES:
 1. DO NOT extract color/size/brand as filters - keep them in "q" for semantic search
@@ -229,8 +228,9 @@ def register_model(middleware_url: str = MIDDLEWARE_URL):
             }
         )
 
-        if response.status_code == 201:
-            print(f"✓ Successfully registered middleware model!")
+        if response.status_code in [200, 201]:
+            action = "registered" if response.status_code == 201 else "updated"
+            print(f"✓ Successfully {action} middleware model!")
             print(f"\nModel ID: {MODEL_ID}")
             print(f"Middleware URL: {middleware_url}")
             print(f"\nTo use this model in searches:")
