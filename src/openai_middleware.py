@@ -226,7 +226,7 @@ def build_enriched_prompt(
     import json
     context_str = json.dumps(category_context, indent=2)
 
-    enriched_content = f"""Given the user search query and the top product categories with sample products, extract search parameters.
+    enriched_content = f"""Given the user search query and the top product categories with sample products, extract search parameters AND classify the category.
 
 **User Query**: "{user_query}"
 
@@ -234,29 +234,78 @@ def build_enriched_prompt(
 {context_str}
 
 **Task**:
-1. Extract filters (price, stock, special_price only - follow conservative rules)
-2. Build search query (q field with product type, attributes, descriptors)
-3. Determine sort order (if applicable)
-4. Detect category based on context (be conservative - return null if ambiguous)
+1. Analyze the query intent and retrieved product context
+2. Classify the most relevant category (be CONSERVATIVE - see rules below)
+3. Extract filters (price, stock, special_price only - follow conservative rules)
+4. Build search query (q field with product type, attributes, descriptors)
+5. Determine sort order (if applicable)
+
+**Category Classification (CRITICAL - RAG Approach)**:
+Determine which category best matches the query based on the retrieved products.
+
+**Decision Criteria**:
+- **Exact match** (SKU or exact product name): Very high confidence (0.9-1.0)
+- **Clear product type** (e.g., "nitrile gloves" → Gloves): High confidence (0.7-0.9)
+- **Product type + attributes** (e.g., "blue nitrile gloves"): High confidence (0.7-0.9)
+- **Brand + product type** (e.g., "Thermo Fisher pipettes"): Medium-high confidence (0.6-0.8)
+- **Ambiguous or attribute-only**: Low confidence (0.0-0.5) → Return null
+
+**CRITICAL RULES - Return null for category and confidence < 0.75 if**:
+1. **Single attribute word without product type**:
+   - Examples: "clear", "large", "medium", "blue", "sterile", "disposable"
+   - These are attributes (color, size, property), NOT product types
+   - Rule: If query is 1-2 words AND doesn't mention a specific product type, return null
+
+2. **Brand name only without product type**:
+   - Examples: "Mercedes Scientific", "Ansell", "Yamato", "Thermo Fisher"
+   - Brands span many categories, too ambiguous to filter
+   - Rule: If query is only a brand name, return null
+
+3. **Generic attribute categories**:
+   - Avoid categories like "Brand: X", "Size: X", "Color: X"
+   - These are not product categories, they're attributes
+   - Rule: If category name starts with "Brand:", "Size:", "Color:", return null
+
+4. **Highly ambiguous product types**:
+   - Examples: "filters" (could be water, air, syringe, etc.)
+   - Multiple distinct product categories match equally well
+   - Rule: If 3+ categories match equally, return null
 
 **Response Format** (JSON ONLY - no markdown, no code fences):
 {{
     "q": "search terms in singular form",
     "filter_by": "price/stock/special_price filters with &&",
     "sort_by": "field:direction",
-    "per_page": 20
+    "per_page": 20,
+    "detected_category": "Full/Category/Path" or null,
+    "category_confidence": 0.85,
+    "category_reasoning": "Why this category was chosen (or why null)"
 }}
 
-IMPORTANT: Return ONLY the JSON object above. Do NOT wrap it in markdown code fences or any other formatting.
+IMPORTANT:
+- Return ONLY the JSON object above. Do NOT wrap it in markdown code fences or any other formatting.
+- If detected_category is not null AND category_confidence >= 0.75, the category filter will be automatically applied
+- Be CONSERVATIVE with category detection - null is better than wrong category
 
-**Conservative Rules** (from system prompt):
+**Conservative Filter Rules**:
 - DO NOT extract color/size/brand as filters (keep in "q" for semantic search)
-- Return null category for single-word attributes ("clear", "large")
-- Return null category for brand-only queries ("Mercedes Scientific")
-- Return null category for highly ambiguous queries
 - ALWAYS extract price when mentioned (exact: price:=X, range: price:<X or price:>X)
 - ALWAYS extract stock when mentioned (stock_status:=IN_STOCK)
 - ALWAYS extract special_price for "on sale" (special_price:>0)
+
+**Examples**:
+
+Query: "clear"
+→ {{"q": "clear", "filter_by": "", "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Single attribute word without product type"}}
+
+Query: "Mercedes Scientific"
+→ {{"q": "Mercedes Scientific", "filter_by": "", "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Brand only, spans many categories"}}
+
+Query: "nitrile gloves under $50"
+→ {{"q": "nitrile glove", "filter_by": "price:<50", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type match with price filter"}}
+
+Query: "Centrifuge tubes, 50ml capacity"
+→ {{"q": "centrifuge tube 50ml", "filter_by": "", "detected_category": "Products/Lab Plasticware/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity specification"}}
 """
 
     # Return messages: system prompt + enriched user content
@@ -296,6 +345,73 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini") -
             )
 
         return response.json()
+
+
+def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75) -> Dict[str, Any]:
+    """
+    Apply category filter to search parameters if LLM is confident.
+
+    This function:
+    1. Parses the LLM response content (JSON with search parameters)
+    2. Extracts detected_category and category_confidence
+    3. If confident (>= threshold), injects category filter into filter_by
+    4. Returns modified response
+
+    Args:
+        openai_response: Raw OpenAI API response
+        confidence_threshold: Minimum confidence to apply filter (default: 0.75)
+
+    Returns:
+        Modified OpenAI response with category filter applied (if confident)
+    """
+    try:
+        # Extract LLM message content
+        message_content = openai_response["choices"][0]["message"]["content"]
+
+        # Parse JSON content
+        params = json.loads(message_content)
+
+        # Extract category classification results
+        detected_category = params.get("detected_category")
+        category_confidence = params.get("category_confidence", 0.0)
+        category_reasoning = params.get("category_reasoning", "")
+
+        # Check if we should apply category filter
+        if detected_category and category_confidence >= confidence_threshold:
+            # Escape category name for Typesense filter syntax
+            escaped_category = detected_category.replace("`", "\\`")
+
+            # Build category filter
+            category_filter = f"categories:=`{escaped_category}`"
+
+            # Get existing filters
+            existing_filter = params.get("filter_by", "").strip()
+
+            # Combine filters
+            if existing_filter:
+                # Add category filter to existing filters
+                params["filter_by"] = f"{category_filter} && {existing_filter}"
+            else:
+                # Just use category filter
+                params["filter_by"] = category_filter
+
+            print(f"[RAG] Category filter applied: '{escaped_category}' (confidence: {category_confidence:.2f})")
+            print(f"[RAG] Reasoning: {category_reasoning}")
+        else:
+            print(f"[RAG] Category filter NOT applied")
+            print(f"[RAG] Detected: {detected_category or 'None'}")
+            print(f"[RAG] Confidence: {category_confidence:.2f} (threshold: {confidence_threshold})")
+            print(f"[RAG] Reasoning: {category_reasoning}")
+
+        # Update the response with modified parameters
+        openai_response["choices"][0]["message"]["content"] = json.dumps(params)
+
+        return openai_response
+
+    except Exception as e:
+        print(f"Error applying category filter: {e}")
+        # Return original response if processing fails
+        return openai_response
 
 
 # ============================================================================
@@ -340,7 +456,12 @@ async def chat_completions(request: ChatCompletionRequest):
     OpenAI-compatible chat completions endpoint.
 
     This is the main endpoint that Typesense will call.
-    It encapsulates the entire RAG workflow.
+    It encapsulates the entire RAG workflow:
+    1. Retrieve relevant products (RAG context)
+    2. Enrich prompt with product context
+    3. Call OpenAI for filter extraction + category classification
+    4. Apply category filter if confident (>= 0.75)
+    5. Return search parameters to Typesense
     """
     try:
         # 1. Extract user query from messages
@@ -349,7 +470,7 @@ async def chat_completions(request: ChatCompletionRequest):
         # 2. Extract schema info from system message
         schema_info = extract_schema_info(request.messages)
 
-        # 3. Run retrieval search
+        # 3. Run retrieval search (RAG: get product context)
         products = await retrieve_products(user_query, limit=20)
 
         # 4. Build enriched prompt with product context
@@ -359,10 +480,13 @@ async def chat_completions(request: ChatCompletionRequest):
             schema_info.get("system_prompt", "")
         )
 
-        # 5. Call real OpenAI API
+        # 5. Call real OpenAI API (filter extraction + category classification)
         openai_response = await call_openai(enriched_messages, model=request.model)
 
-        # 6. Return in OpenAI format (Typesense expects this)
+        # 6. Apply category filter if LLM is confident
+        openai_response = apply_category_filter(openai_response)
+
+        # 7. Return in OpenAI format (Typesense expects this)
         return openai_response
 
     except ValueError as e:
