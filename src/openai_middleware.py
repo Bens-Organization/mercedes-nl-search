@@ -284,7 +284,7 @@ Determine which category best matches the query based on the retrieved products.
 **Response Format** (JSON ONLY - no markdown, no code fences):
 {{
     "q": "search terms in singular form",
-    "filter_by": "price/stock/special_price filters with &&",
+    "filter_by": "filters with && (include category if confident)",
     "sort_by": "field:direction",
     "per_page": 20,
     "detected_category": "Full/Category/Path" or null,
@@ -294,7 +294,8 @@ Determine which category best matches the query based on the retrieved products.
 
 IMPORTANT:
 - Return ONLY the JSON object above. Do NOT wrap it in markdown code fences or any other formatting.
-- If detected_category is not null AND category_confidence >= 0.75, the category filter will be automatically applied
+- Include detected_category, category_confidence, category_reasoning for logging
+- If detected_category is not null AND category_confidence >= 0.75, it will be applied to filter_by automatically
 - Be CONSERVATIVE with category detection - null is better than wrong category
 
 **Conservative Filter Rules**:
