@@ -389,7 +389,8 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         category_reasoning = params.get("category_reasoning", "")
 
         # Check if we should apply category filter
-        if detected_category and category_confidence >= confidence_threshold:
+        # TEMPORARILY DISABLED TO TEST IF CATEGORY FILTER IS BREAKING REGEX PARSER
+        if False and detected_category and category_confidence >= confidence_threshold:
             # Escape category name for Typesense filter syntax (remove backticks to fix regex parser)
             escaped_category = detected_category.replace("`", "")
 
