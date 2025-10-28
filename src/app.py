@@ -41,7 +41,7 @@ typesense_client = typesense.Client(Config.get_typesense_config())
 
 # Middleware model ID (must be registered with Typesense first)
 # Run: ./venv/bin/python src/setup_middleware_model.py update YOUR_MIDDLEWARE_URL
-MIDDLEWARE_MODEL_ID = "custom-rag-middleware"
+MIDDLEWARE_MODEL_ID = "custom-rag-middleware-v2"  # Updated to bypass Typesense cache
 
 # ============================================================================
 # OLD APPROACH (Dual LLM RAG - Commented out for rollback)
