@@ -390,11 +390,11 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
 
         # Check if we should apply category filter
         if detected_category and category_confidence >= confidence_threshold:
-            # Escape category name for Typesense filter syntax
-            escaped_category = detected_category.replace("`", "\\`")
+            # Escape category name for Typesense filter syntax (remove backticks to fix regex parser)
+            escaped_category = detected_category.replace("`", "")
 
-            # Build category filter
-            category_filter = f"categories:=`{escaped_category}`"
+            # Build category filter WITHOUT backticks (they break Typesense's regex parser)
+            category_filter = f"categories:={escaped_category}"
 
             # Get existing filters
             existing_filter = params.get("filter_by", "").strip()
