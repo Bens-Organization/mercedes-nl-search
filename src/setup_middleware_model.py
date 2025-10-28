@@ -34,7 +34,7 @@ TYPESENSE_URL = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.
 TYPESENSE_API_KEY = Config.TYPESENSE_API_KEY
 
 # Model configuration
-MODEL_ID = "custom-rag-middleware"
+MODEL_ID = "custom-rag-middleware-v2"  # Changed to bypass Typesense cache
 MIDDLEWARE_URL = "https://mercedes-search-api-middleware.onrender.com"  # Update this for production
 
 
