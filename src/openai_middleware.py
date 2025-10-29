@@ -589,7 +589,10 @@ async def generate_vllm_format(request: Request):
         print("\n" + "=" * 80)
         print(f"[{datetime.now().isoformat()}] INCOMING vLLM REQUEST FROM TYPESENSE")
         print("=" * 80)
-        print(f"[REQUEST] Prompt: {prompt[:100]}...")
+        print(f"[REQUEST] Prompt length: {len(prompt)} chars")
+        print(f"[REQUEST] Prompt preview: {prompt[:200]}...")
+        if len(prompt) > 500:
+            print(f"[REQUEST] Prompt tail: ...{prompt[-200:]}")
 
         # Validation queries (hello, test, etc.) - skip RAG processing
         if prompt.strip().lower() in ["hello", "hi", "test", "ping"]:
@@ -605,18 +608,38 @@ async def generate_vllm_format(request: Request):
             print("=" * 80 + "\n")
             return {"text": [json.dumps(params)]}
 
-        # Typesense passes the system prompt + user query combined in the prompt field
-        # We need to extract just the user query (last line after "user: ")
-        user_query = prompt
-        if "\n" in prompt and "user:" in prompt.lower():
-            # Extract user query from combined prompt
-            lines = prompt.split("\n")
-            for line in reversed(lines):
-                if line.strip() and not line.strip().lower().startswith(("system:", "note:", "query field", "filter field", "sort field")):
-                    user_query = line.strip()
-                    break
+        # Typesense sends: system_prompt + "\n\n" + user_query
+        # We need to extract just the user query (content after the system prompt)
+        user_query = prompt.strip()
 
-        print(f"[EXTRACTED] User query: {user_query[:100]}...")
+        # Check if this looks like a combined system+user prompt
+        if len(prompt) > 1000:  # System prompt is ~2300 chars
+            # Find where the system prompt ends (look for double newline or "user:" marker)
+            if "\n\n" in prompt:
+                parts = prompt.split("\n\n", 1)
+                if len(parts) > 1:
+                    user_query = parts[1].strip()
+
+            # Alternative: look for explicit "user:" marker
+            if "user:" in prompt.lower():
+                idx = prompt.lower().rfind("user:")
+                user_query = prompt[idx + 5:].strip()
+
+        print(f"[EXTRACTED] User query: '{user_query[:100]}...'")
+
+        # Handle validation queries (empty or just system prompt)
+        if not user_query or user_query.lower() in ["", "test", "hello"]:
+            print(f"[VALIDATION] Empty/test query detected - returning default params")
+            params = {
+                "q": "test",
+                "filter_by": "",
+                "sort_by": "",
+                "per_page": 20
+            }
+            print(f"\n[RESPONSE] Status: 200 OK")
+            print(f"[RESPONSE] vLLM format: {{\"text\": [...]}}")
+            print("=" * 80 + "\n")
+            return {"text": [json.dumps(params)]}
 
         # Call the existing chat_completions logic (reuse the RAG processing)
         # Create a mock request with the user query
