@@ -605,7 +605,35 @@ async def generate_vllm_format(request: Request):
             print("=" * 80 + "\n")
             return {"text": [json.dumps(params)]}
 
-        # Call OpenAI to get initial parameters (reuse existing logic)
+        # Typesense passes the system prompt + user query combined in the prompt field
+        # We need to extract just the user query (last line after "user: ")
+        user_query = prompt
+        if "\n" in prompt and "user:" in prompt.lower():
+            # Extract user query from combined prompt
+            lines = prompt.split("\n")
+            for line in reversed(lines):
+                if line.strip() and not line.strip().lower().startswith(("system:", "note:", "query field", "filter field", "sort field")):
+                    user_query = line.strip()
+                    break
+
+        print(f"[EXTRACTED] User query: {user_query[:100]}...")
+
+        # Call the existing chat_completions logic (reuse the RAG processing)
+        # Create a mock request with the user query
+        from fastapi import Request as FastAPIRequest
+        import io
+
+        # Build the request data as the chat_completions endpoint expects it
+        request_data = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": "Extract search parameters from natural language queries for medical/scientific products."},
+                {"role": "user", "content": user_query}
+            ],
+            "temperature": 0.0
+        }
+
+        # Call OpenAI directly with proper system + user messages
         openai_client = httpx.AsyncClient(timeout=30.0)
         try:
             openai_response = await openai_client.post(
@@ -614,16 +642,13 @@ async def generate_vllm_format(request: Request):
                     "Authorization": f"Bearer {Config.OPENAI_API_KEY}",
                     "Content-Type": "application/json"
                 },
-                json={
-                    "model": "gpt-4o-mini",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.0
-                }
+                json=request_data
             )
             openai_data = openai_response.json()
 
             # Extract parameters from OpenAI response
             content = openai_data["choices"][0]["message"]["content"]
+            print(f"[OPENAI] Response content: {content[:200]}...")
             params = json.loads(content)
 
         finally:
