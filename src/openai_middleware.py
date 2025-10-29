@@ -396,8 +396,15 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             # Build category filter WITHOUT backticks (they break Typesense's regex parser)
             category_filter = f"categories:={escaped_category}"
 
-            # Get existing filters
+            # Get existing filters and REMOVE any existing category filter
             existing_filter = params.get("filter_by", "").strip()
+
+            # Remove existing category filter (with or without backticks)
+            import re
+            existing_filter = re.sub(r'categories:=`?[^`&]+`?\s*&&?\s*', '', existing_filter).strip()
+            # Clean up any trailing && or &&
+            existing_filter = re.sub(r'\s*&&\s*$', '', existing_filter).strip()
+            existing_filter = re.sub(r'^\s*&&\s*', '', existing_filter).strip()
 
             # Combine filters
             if existing_filter:
