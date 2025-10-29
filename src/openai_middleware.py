@@ -399,12 +399,13 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             # Get existing filters and REMOVE any existing category filter
             existing_filter = params.get("filter_by", "").strip()
 
-            # Remove existing category filter (with or without backticks)
-            import re
-            existing_filter = re.sub(r'categories:=`?[^`&]+`?\s*&&?\s*', '', existing_filter).strip()
-            # Clean up any trailing && or &&
-            existing_filter = re.sub(r'\s*&&\s*$', '', existing_filter).strip()
-            existing_filter = re.sub(r'^\s*&&\s*', '', existing_filter).strip()
+            # Remove existing category filter using a more robust approach
+            # Split by && to get individual filter conditions
+            filter_parts = [part.strip() for part in existing_filter.split('&&')]
+            # Keep only non-category filters
+            filter_parts = [part for part in filter_parts if not part.startswith('categories:=')]
+            # Rejoin with &&
+            existing_filter = ' && '.join(filter_parts) if filter_parts else ''
 
             # Combine filters
             if existing_filter:
