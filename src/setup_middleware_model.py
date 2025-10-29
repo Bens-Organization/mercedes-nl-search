@@ -202,7 +202,7 @@ def register_model(middleware_url: str = MIDDLEWARE_URL):
     model_config = {
         "id": MODEL_ID,
         "model_name": "vllm/gpt-4o-mini",  # vLLM namespace supports custom endpoints!
-        "api_url": f"{middleware_url}/v1/chat/completions",  # Full endpoint path
+        "api_url": f"{middleware_url}/generate",  # vLLM /generate endpoint (not /v1/chat/completions)
         "system_prompt": get_system_prompt(),
         "max_bytes": 16000,
         "temperature": 0.0

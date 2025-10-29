@@ -570,6 +570,112 @@ async def stats():
         raise HTTPException(status_code=500, detail=f"Error fetching stats: {str(e)}")
 
 
+@app.post("/generate")
+async def generate_vllm_format(request: Request):
+    """
+    vLLM-compatible /generate endpoint for Typesense integration.
+
+    This endpoint provides the same RAG-powered search parameter extraction
+    as the OpenAI-compatible endpoint, but returns results in vLLM's format:
+    {"text": ["generated text"]}
+
+    Typesense's vllm/ namespace expects this format.
+    """
+    try:
+        # Parse request body
+        data = await request.json()
+        prompt = data.get("prompt", "")
+
+        print("\n" + "=" * 80)
+        print(f"[{datetime.now().isoformat()}] INCOMING vLLM REQUEST FROM TYPESENSE")
+        print("=" * 80)
+        print(f"[REQUEST] Prompt: {prompt[:100]}...")
+
+        # Validation queries (hello, test, etc.) - skip RAG processing
+        if prompt.strip().lower() in ["hello", "hi", "test", "ping"]:
+            print(f"[VALIDATION] Detected validation query: '{prompt}' - skipping Typesense retrieval")
+            params = {
+                "q": prompt.strip().lower(),
+                "filter_by": "",
+                "sort_by": "",
+                "per_page": 20
+            }
+            print(f"\n[RESPONSE] Status: 200 OK")
+            print(f"[RESPONSE] vLLM format: {{\"text\": [...]}}")
+            print("=" * 80 + "\n")
+            return {"text": [json.dumps(params)]}
+
+        # Call OpenAI to get initial parameters (reuse existing logic)
+        openai_client = httpx.AsyncClient(timeout=30.0)
+        try:
+            openai_response = await openai_client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {Config.OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.0
+                }
+            )
+            openai_data = openai_response.json()
+
+            # Extract parameters from OpenAI response
+            content = openai_data["choices"][0]["message"]["content"]
+            params = json.loads(content)
+
+        finally:
+            await openai_client.aclose()
+
+        # Apply RAG-based category detection (reuse existing logic from chat_completions)
+        detected_category = params.get("detected_category")
+        category_confidence = params.get("category_confidence", 0.0)
+        confidence_threshold = 0.75
+
+        if detected_category and category_confidence >= confidence_threshold:
+            # Remove backticks and apply category filter
+            escaped_category = detected_category.replace("`", "")
+            category_filter = f"categories:={escaped_category}"
+
+            # Remove existing category filters
+            existing_filter = params.get("filter_by", "").strip()
+            filter_parts = [part.strip() for part in existing_filter.split('&&')]
+            filter_parts = [part for part in filter_parts if not part.startswith('categories:=')]
+            existing_filter = ' && '.join(filter_parts) if filter_parts else ''
+
+            # Add category filter
+            if existing_filter:
+                params["filter_by"] = f"{category_filter} && {existing_filter}"
+            else:
+                params["filter_by"] = category_filter
+
+            print(f"[RAG] Category filter applied: '{escaped_category}' (confidence: {category_confidence:.2f})")
+        else:
+            print(f"[RAG] Category filter NOT applied (confidence: {category_confidence:.2f})")
+
+        # Remove extra fields that Typesense doesn't expect
+        params.pop("detected_category", None)
+        params.pop("category_confidence", None)
+        params.pop("category_reasoning", None)
+
+        # Return in vLLM format: {"text": ["json string"]}
+        result = {"text": [json.dumps(params)]}
+
+        print(f"\n[RESPONSE] Status: 200 OK")
+        print(f"[RESPONSE] Content: {json.dumps(params)[:200]}...")
+        print("=" * 80 + "\n")
+
+        return result
+
+    except Exception as e:
+        print(f"Error in generate_vllm_format: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
 # ============================================================================
 # Main Entry Point
 # ============================================================================
