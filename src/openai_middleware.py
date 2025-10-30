@@ -600,10 +600,14 @@ async def generate_vllm_format(request: Request):
         print("\n" + "=" * 80)
         print(f"[{datetime.now().isoformat()}] INCOMING vLLM REQUEST FROM TYPESENSE")
         print("=" * 80)
+        print(f"[DEBUG] Full request data: {json.dumps(data, indent=2)[:500]}...")
         print(f"[REQUEST] Prompt length: {len(prompt)} chars")
-        print(f"[REQUEST] Prompt preview: {prompt[:200]}...")
-        if len(prompt) > 500:
-            print(f"[REQUEST] Prompt tail: ...{prompt[-200:]}")
+        if prompt:
+            print(f"[REQUEST] Prompt preview: {prompt[:200]}...")
+            if len(prompt) > 500:
+                print(f"[REQUEST] Prompt tail: ...{prompt[-200:]}")
+        else:
+            print(f"[WARNING] Empty prompt received from Typesense!")
 
         # Validation queries (hello, test, etc.) - skip RAG processing
         if prompt.strip().lower() in ["hello", "hi", "test", "ping"]:
