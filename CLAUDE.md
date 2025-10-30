@@ -96,14 +96,16 @@ flowchart TB
 
 ```
 src/
-├── app.py              # Flask API server (REST endpoints)
-├── config.py           # Configuration management
-├── indexer_neon.py     # Neon database indexer (RECOMMENDED - 26k+ products)
-├── indexer.py          # GraphQL API indexer (LEGACY - 5-10k products)
-├── search.py           # Single LLM search implementation (LEGACY)
-├── search_rag.py       # RAG dual LLM search implementation (CURRENT - 84.6% accuracy)
-├── setup_nl_model.py   # Natural language model registration
-└── models.py           # Pydantic data models
+├── app.py                    # Flask API server (REST endpoints)
+├── config.py                 # Configuration management
+├── models.py                 # Pydantic data models
+├── search_middleware.py      # Middleware search implementation (CURRENT - decoupled architecture)
+├── openai_middleware.py      # OpenAI-compatible middleware server
+├── indexer_neon.py           # Neon database indexer (RECOMMENDED - 34k+ products)
+└── utilities/                # Utility scripts
+    ├── export_collection.py          # Export Typesense data
+    ├── export_nl_system_prompt.py    # Export NL model config
+    └── setup_synonyms.py             # Synonym management
 
 docs/                   # Technical documentation
 ├── RAG_DUAL_LLM_APPROACH.md              # Comprehensive RAG implementation guide
@@ -126,7 +128,7 @@ database/
 
 frontend-next/
 ├── app/
-│   ├── page.tsx        # Main search page with RAG integration
+│   ├── page.tsx        # Main search page with middleware integration
 │   └── components/
 └── package.json
 
@@ -233,151 +235,83 @@ These fields enable users to search with or without spaces/dashes:
 
 See `MODEL_NUMBER_SEARCH_FIX.md` for comprehensive documentation of this feature.
 
-### src/indexer.py (LEGACY)
-Fetches products from Mercedes GraphQL API and indexes to Typesense.
+### src/search_middleware.py (CURRENT)
+Implements decoupled middleware architecture with RAG-based category classification.
 
-**Key Features**:
-- **Multi-search strategy** to bypass API's 500-product limit
-- Auto-generates embeddings via Typesense's OpenAI integration
-- Batch processing (100 products per batch)
-- Error handling for failed imports
-- Configurable max_products for testing
+**Class**: `MiddlewareSearch`
 
-**Multi-Search Strategy** (Critical Implementation Detail):
-
-The Mercedes Scientific GraphQL API has a **hard limit of 500 products** per query, regardless of parameters used (`search`, `filter`, pagination, etc.). To work around this:
-
-1. **Generate 110+ search terms** (`_get_search_terms()`):
-   - Single letters (a-z)
-   - Numbers (0-9)
-   - Product categories (gloves, pipette, slide, reagent, etc.)
-   - Medical/lab terms (sterile, surgical, diagnostic, etc.)
-
-2. **Fetch products for each term** (`_fetch_products_for_search()`):
-   - Each search term can return up to 500 products
-   - Fetches first 5 pages (up to 500 products) per term
-   - Silently handles errors for individual searches
-
-3. **De-duplicate by SKU** (`fetch_products()`):
-   - Tracks unique products in dictionary keyed by SKU
-   - Typically yields 5,000-10,000+ unique products
-   - Much better than single query (limited to 500)
-
-**Example Output**:
-```
-Search terms: 110 different queries
-  [  1/110] Search 'a              ':  100 products,  100 new unique (Total: 100)
-  [  2/110] Search 'b              ':  100 products,  100 new unique (Total: 200)
-  [ 50/110] Search 'gloves         ':  100 products,   96 new unique (Total: 5,234)
-  ...
-✓ Total unique products collected: 8,547
-```
-
-**To increase product coverage**:
-- Add more search terms to `_get_search_terms()`
-- Use brand names, SKU patterns, specific categories
-- Increase pages per search (currently limited to 5)
-
-**Schema**:
-- Standard fields: product_id, name, sku, price, description, etc.
-- **Embedding field**: Auto-generated from [name, description, short_description, categories]
-
-### src/search.py (LEGACY)
-Implements natural language search using Typesense's native NL feature (single LLM approach).
-
-**Flow**:
-1. `_execute_nl_search()`: Executes search with `nl_query=true` - Typesense automatically extracts filters, sorts, etc.
-2. `_transform_results()`: Maps Typesense documents → Pydantic Product models
-3. Category detection: Automatically detects category filters and provides additional results
-
-**Features**:
-- Uses Typesense native NL search (v29.0+) with registered OpenAI model
-- Automatic filter extraction (price, stock, categories)
-- Debug mode to see how LLM interprets queries
-- Fallback to keyword-only search if NL fails
-
-**Note**: This is the legacy single-LLM implementation. The current production implementation uses `search_rag.py` instead.
-
-### src/search_rag.py (CURRENT)
-Implements RAG-based natural language search with dual LLM approach for improved category classification.
-
-**Class**: `RAGNaturalLanguageSearch`
-
-**Architecture** (Dual LLM):
-1. **LLM Call 1** (`_execute_nl_search`): Typesense NL model extracts filters (price, stock, brand, size, color)
-2. **LLM Call 2** (`_classify_category_with_llm`): GPT-4o-mini analyzes retrieved products and classifies category
+**Architecture** (Decoupled Middleware):
+- **No Typesense NL models** - Avoids circular dependency issues
+- **External middleware** - Separate OpenAI-compatible service for LLM calls
+- **3-stage workflow**:
+  1. Retrieval search (simple text match, no category filter)
+  2. Context extraction + middleware call (category classification)
+  3. Final search with extracted parameters
 
 **Key Methods**:
-- `search()`: Main entry point, orchestrates the dual LLM workflow
-- `_retrieve_semantic_results()`: Retrieves top 20 products using NL-extracted filters (no category yet)
-- `_extract_category_context()`: Builds context from retrieved products for LLM classification
-- `_classify_category_with_llm()`: Sends context to GPT-4o-mini, returns category + confidence + reasoning
-- `_search_with_category_filter()`: Re-executes search with RAG-detected category + NL filters
-- `_remove_category_filter()`: Prevents duplicate category filters
-
-**Conservative Rules** (prevents false positives):
-- Returns `null` for single-word attributes: "clear", "large", "sterile"
-- Returns `null` for brand-only queries: "Mercedes Scientific"
-- Returns `null` for highly ambiguous queries: "filters" (water/air/syringe?)
-- Default confidence threshold: 0.75
-
-**Model ID**:
-- Uses UUID: `9bb52abc-8bf8-4536-80de-8231e77fab14` (assigned by Typesense)
-- **Critical**: Must use the actual UUID, NOT the string ID "openai-gpt4o-mini"
+- `search()`: Main entry point, orchestrates the 3-stage workflow
+- `_retrieval_search()`: Simple search to get product context (no LLM)
+- `_extract_context()`: Groups products by category for context
+- `_call_middleware()`: Calls external middleware with context
+- `_parse_middleware_response()`: Extracts search parameters from middleware
+- `_final_search()`: Executes final search with middleware parameters
 
 **Response Structure**:
 ```python
 {
     "results": [...],
     "total": 25,
-    "query_time_ms": 4157,
+    "query_time_ms": 3500,
     "detected_category": "Products/Gloves & Apparel/Gloves",
     "category_confidence": 0.85,
     "category_applied": true,
-    "confidence_threshold": 0.75,
     "typesense_query": {
-        "nl_extracted_query": "nitrile glove powder-free",
-        "nl_extracted_filters": "stock_status:=IN_STOCK && price:<30",
-        "llm_reasoning": "The query specifies 'nitrile gloves'...",
-        "category_applied": true,
-        "detected_category": "Products/Gloves & Apparel/Gloves"
+        "approach": "decoupled_middleware",
+        "extracted_query": "nitrile glove powder-free",
+        "filters_applied": "categories:=Gloves && price:<30",
+        "middleware_params": {...}
     }
 }
 ```
 
 **Performance**:
-- **Query Time**: ~3.5-4.5 seconds (2x slower than single LLM)
-- **Cost**: ~$20 per 1,000 queries (2x cost of single LLM)
-- **Accuracy**: 84.6% on test dataset (3 improvements over baseline)
+- **Query Time**: ~3-4 seconds
+- **No circular dependency**: Clean separation of concerns
+- **Scalable**: Middleware can be scaled independently
 
-**Debug Mode**:
-- Enable with `debug=true` in API request
-- Auto-enabled for localhost in frontend
-- Shows retrieval stats, LLM reasoning, confidence scores
+### src/openai_middleware.py
+OpenAI-compatible middleware server that provides category classification.
 
-**Full Documentation**: See `docs/RAG_DUAL_LLM_APPROACH.md`
+**Purpose**: External service that receives query + context and returns search parameters.
 
-### src/setup_nl_model.py
-Registers the OpenAI model with Typesense for native NL search.
+**Features**:
+- OpenAI-compatible `/v1/chat/completions` endpoint
+- Receives pre-retrieved product context from search_middleware
+- Uses GPT-4o-mini for category classification
+- Returns structured JSON with search parameters
+- Independent scaling and deployment
 
-**Important**: This must be run once before using natural language search features. The script:
-- Registers GPT-4o-mini with Typesense via the `/nl_search_models` API
-- Includes comprehensive system prompt for filter extraction
-- Checks if model already exists
-- Allows updating/recreating the model
+### src/utilities/export_nl_system_prompt.py
+Exports the registered NL model's system prompt from Typesense (if using NL models).
 
-### src/export_nl_system_prompt.py
-Exports the registered NL model's system prompt from Typesense.
-
-**Purpose**: Retrieve and inspect the actual system prompt being used by the deployed model.
+**Purpose**: Retrieve and inspect system prompts from Typesense.
 
 **Features**:
 - Retrieves model configuration from Typesense API
 - Exports system prompt to `database/{TYPESENSE_HOST}/nl_model_system_prompt.txt`
 - Saves full model config as `database/{TYPESENSE_HOST}/nl_model_system_prompt.json`
 - Shows prompt statistics (length, lines, preview)
-- Can compare deployed prompt with `setup_nl_model.py` version
 - Automatically organizes exports by Typesense host
+
+### src/utilities/setup_synonyms.py
+Manages synonym groups in Typesense for improved search matching.
+
+**Purpose**: Configure explicit synonym mappings for domain-specific terms.
+
+**Features**:
+- 35+ predefined synonym groups (materials, equipment, measurements)
+- Easy add/remove/list/clear operations
+- Testing capabilities to verify synonym matching
 
 **Usage**:
 ```bash
@@ -691,39 +625,26 @@ logging.basicConfig(level=logging.DEBUG)
 
 ### Common Issues
 
-**1. "NL search model not configured" warning**
-- Cause: OpenAI model not registered with Typesense
-- Fix: Run `python src/setup_nl_model.py`
-- Verify: Run `python src/setup_nl_model.py check`
-- Required for: Native NL search features (filter extraction, etc.)
+**1. Middleware connection errors**
+- Cause: OpenAI middleware service not running or unreachable
+- Fix: Ensure middleware is deployed and `MIDDLEWARE_URL` is correct
+- Debug: Check middleware logs for errors
 
-**2. "Fallback: Using keyword-only search"**
-- Cause: NL search failed (likely model not configured)
-- Debug: Check Typesense version (need v29.0+)
-- Debug: Verify NL model exists: `python src/setup_nl_model.py check`
-- Debug: Check OpenAI API key is valid
-
-**3. Slow indexing**
-- Cause: OpenAI rate limits or many API queries (multi-search)
+**2. Slow indexing**
+- Cause: OpenAI rate limits during embedding generation
 - Solution: Reduce batch size or upgrade OpenAI tier
 - Monitor: Check OpenAI dashboard for rate limit usage
-- Normal time: 10-20 minutes for full index with multi-search
+- Normal time: 35-45 minutes for full 34k product catalog
 
-**4. Only 500 products indexed**
-- Cause: Multi-search strategy not working
-- Debug: Check if `_get_search_terms()` is returning enough terms
-- Debug: Verify `_fetch_products_for_search()` is being called
-- Fix: Ensure `fetch_products()` uses the multi-search approach
+**3. Poor category classification**
+- Cause: Insufficient or irrelevant product context
+- Debug: Enable `debug=true` to see middleware reasoning
+- Debug: Check retrieval results quality
+- Solution: Adjust retrieval search parameters
 
-**5. Poor filter extraction from queries**
-- Cause: NL model not understanding queries correctly
-- Debug: Enable `nl_query_debug=true` to see LLM reasoning
-- Debug: Check response's `parsed_nl_query` field
-- Note: Typesense auto-generates prompts from schema - no manual prompt editing needed
-
-**6. Empty results**
-- Cause: Filters too restrictive from NL extraction
-- Debug: Check `parsed_nl_query` in response
+**4. Empty results**
+- Cause: Filters too restrictive from middleware
+- Debug: Check `typesense_query.filters_applied` in response
 - Debug: Try simpler queries to isolate issue
 - Monitor: Use debug mode to see what filters were extracted
 
@@ -735,11 +656,11 @@ OPENAI_API_KEY=sk-...
 TYPESENSE_API_KEY=...
 TYPESENSE_HOST=...
 
-# Neon Database (for indexer_neon.py - RECOMMENDED)
+# Neon Database (for indexer_neon.py)
 NEON_DATABASE_URL=postgresql://user:pass@host.neon.tech/db?sslmode=require
 
-# Mercedes GraphQL API (for indexer.py - LEGACY)
-MERCEDES_GRAPHQL_URL=https://www.mercedesscientific.com/graphql
+# Middleware (for search_middleware.py)
+MIDDLEWARE_URL=http://localhost:8000  # Or production middleware URL
 
 # Optional (have defaults)
 OPENAI_MODEL=gpt-4o-mini-2024-07-18
@@ -869,50 +790,37 @@ FLASK_PORT=5001
 ## Useful Commands
 
 ```bash
-# 1. Setup NL search model (REQUIRED - run once)
-python src/setup_nl_model.py
-
-# 2. Check NL model status
-python src/setup_nl_model.py check
-
-# 3a. Index products from Neon database (RECOMMENDED - 34k+ products)
+# 1. Index products from Neon database (34k+ products)
 python src/indexer_neon.py
 
-# 3b. Index products from GraphQL API (LEGACY - 5-10k products)
-python src/indexer.py
+# 2. Start middleware server (required for search)
+python src/openai_middleware.py
 
-# 4. Start API server
+# 3. Start API server
 python src/app.py
 
-# 5. Start frontend
+# 4. Start frontend
 ./start-ui.sh
 
-# 6. Test search
+# 5. Test search
 curl -X POST http://localhost:5001/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "your query here"}'
 
-# 7. Test conservative filtering (reliable filters + semantic attributes)
+# 6. Test with debug mode
 curl -X POST http://localhost:5001/api/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "latest microscopes"}'
+  -d '{"query": "nitrile gloves under $50", "debug": true}'
 
-curl -X POST http://localhost:5001/api/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "blue gloves powder-free"}'  # Color uses semantic search, not strict filter
-
-# 8. Check health
+# 7. Check health
 curl http://localhost:5001/health
 
-# 9. Test NL search directly
-python src/search.py  # Runs test queries with debug output
+# 8. Setup synonyms (OPTIONAL - improves matching)
+python src/utilities/setup_synonyms.py          # Configure synonym groups
+python src/utilities/setup_synonyms.py --list   # List current synonyms
+python src/utilities/setup_synonyms.py --test   # Test synonym matching
 
-# 10. Setup synonyms (OPTIONAL - improves matching)
-python src/setup_synonyms.py          # Configure synonym groups
-python src/setup_synonyms.py --list   # List current synonyms
-python src/setup_synonyms.py --test   # Test synonym matching
-
-# 11. Test synonym behavior (comprehensive tests)
+# 9. Test synonym behavior (comprehensive tests)
 ./venv/bin/python3 tests/test_synonyms.py  # All synonym tests in one file
 ```
 
@@ -935,16 +843,16 @@ For domain-specific terms, configure explicit synonym groups:
 **Setup**:
 ```bash
 # Configure all synonym groups
-python src/setup_synonyms.py
+python src/utilities/setup_synonyms.py
 
 # List current synonyms
-python src/setup_synonyms.py --list
+python src/utilities/setup_synonyms.py --list
 
 # Test synonym matching
-python src/setup_synonyms.py --test
+python src/utilities/setup_synonyms.py --test
 
 # Clear all synonyms
-python src/setup_synonyms.py --clear
+python src/utilities/setup_synonyms.py --clear
 ```
 
 **Example Synonym Groups**:
@@ -969,7 +877,7 @@ python src/setup_synonyms.py --clear
 ```
 
 **Adding Custom Synonyms**:
-Edit `src/setup_synonyms.py` → `get_synonym_groups()`:
+Edit `src/utilities/setup_synonyms.py` → `get_synonym_groups()`:
 ```python
 {
     "id": "my-synonym-group",
