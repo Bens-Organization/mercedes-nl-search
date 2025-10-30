@@ -1,0 +1,107 @@
+[
+  {
+    "query": "Gloves in stock under $50",
+    "rag": {
+      "success": true,
+      "time_ms": 7461.723804473877,
+      "total": 20,
+      "detected_category": "Products/Gloves & Apparel/Gloves",
+      "category_confidence": 0.9,
+      "category_applied": true,
+      "error": null
+    },
+    "middleware": {
+      "success": true,
+      "time_ms": 4712.225914001465,
+      "total": 33,
+      "detected_category": null,
+      "category_confidence": 0.0,
+      "category_applied": false,
+      "error": null
+    }
+  },
+  {
+    "query": "Safety goggles with anti-fog coating",
+    "rag": {
+      "success": true,
+      "time_ms": 4829.697132110596,
+      "total": 1,
+      "detected_category": "Products/Gloves & Apparel/Glasses & Goggles",
+      "category_confidence": 0.85,
+      "category_applied": true,
+      "error": null
+    },
+    "middleware": {
+      "success": true,
+      "time_ms": 3631.6189765930176,
+      "total": 1,
+      "detected_category": null,
+      "category_confidence": 0.0,
+      "category_applied": false,
+      "error": null
+    }
+  },
+  {
+    "query": "Pipettes 10-100\u03bcL capacity",
+    "rag": {
+      "success": true,
+      "time_ms": 5558.294057846069,
+      "total": 7,
+      "detected_category": "Products/Pipettes",
+      "category_confidence": 0.9,
+      "category_applied": true,
+      "error": null
+    },
+    "middleware": {
+      "success": true,
+      "time_ms": 3772.0351219177246,
+      "total": 5,
+      "detected_category": null,
+      "category_confidence": 0.0,
+      "category_applied": false,
+      "error": null
+    }
+  },
+  {
+    "query": "Sterile test tubes",
+    "rag": {
+      "success": true,
+      "time_ms": 9777.449369430542,
+      "total": 20,
+      "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes",
+      "category_confidence": 0.85,
+      "category_applied": true,
+      "error": null
+    },
+    "middleware": {
+      "success": true,
+      "time_ms": 5611.141204833984,
+      "total": 26,
+      "detected_category": null,
+      "category_confidence": 0.0,
+      "category_applied": false,
+      "error": null
+    }
+  },
+  {
+    "query": "Nitrile gloves powder-free",
+    "rag": {
+      "success": true,
+      "time_ms": 7030.765771865845,
+      "total": 20,
+      "detected_category": "Products/Gloves & Apparel/Gloves",
+      "category_confidence": 0.9,
+      "category_applied": true,
+      "error": null
+    },
+    "middleware": {
+      "success": true,
+      "time_ms": 4938.813924789429,
+      "total": 36,
+      "detected_category": null,
+      "category_confidence": 0.0,
+      "category_applied": false,
+      "error": null
+    }
+  }
+]
