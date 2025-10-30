@@ -714,10 +714,9 @@ async def generate_vllm_format(request: Request):
         else:
             print(f"[RAG] Category filter NOT applied (confidence: {category_confidence:.2f})")
 
-        # Remove extra fields that Typesense doesn't expect
-        params.pop("detected_category", None)
-        params.pop("category_confidence", None)
-        params.pop("category_reasoning", None)
+        # Keep category metadata for API response (decoupled architecture)
+        # The API layer will extract and use these fields
+        # NOTE: Don't remove these - API needs them for debugging and response metadata
 
         # Return in vLLM format: {"text": ["json string"]}
         result = {"text": [json.dumps(params)]}
