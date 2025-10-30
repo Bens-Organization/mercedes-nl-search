@@ -34,20 +34,22 @@ CORS(app, origins=[
 ])
 
 # ============================================================================
-# MIDDLEWARE APPROACH (New - For Staging Testing)
+# DECOUPLED MIDDLEWARE ARCHITECTURE (Active)
 # ============================================================================
-# Initialize Typesense client for middleware-based search
+# Architecture: API handles all orchestration to avoid circular dependency
+# Flow:
+# 1. API → Typesense (retrieval for context)
+# 2. API → Middleware (with context) → OpenAI
+# 3. API → Typesense (final search with middleware params)
+#
+# This avoids circular dependency by NOT using Typesense's nl_search_models
+from src.search_middleware import MiddlewareSearch
+
+# Initialize Typesense client for health checks
 typesense_client = typesense.Client(Config.get_typesense_config())
 
-# Middleware model ID (must be registered with Typesense first)
-# Run: ./venv/bin/python src/setup_middleware_model.py update YOUR_MIDDLEWARE_URL
-MIDDLEWARE_MODEL_ID = "custom-rag-middleware-v2"  # Updated to bypass Typesense cache
-
-# ============================================================================
-# OLD APPROACH (Dual LLM RAG - Commented out for rollback)
-# ============================================================================
-# from src.search_rag import RAGNaturalLanguageSearch
-# search_engine = RAGNaturalLanguageSearch()
+# Initialize middleware search engine
+search_engine = MiddlewareSearch()
 
 
 @app.route("/")
@@ -55,11 +57,11 @@ def home():
     """Health check endpoint."""
     return jsonify({
         "status": "ok",
-        "message": "Mercedes Scientific Natural Language Search API (Middleware-powered)",
-        "version": "3.0",
+        "message": "Mercedes Scientific Natural Language Search API",
+        "version": "3.1",
         "environment": Config.ENVIRONMENT,
-        "search_engine": "Middleware-based RAG (faster, cheaper)",
-        "middleware_model_id": MIDDLEWARE_MODEL_ID,
+        "search_engine": "Decoupled Middleware RAG (fast + accurate)",
+        "architecture": "Decoupled (API orchestration, no circular dependency)",
         "endpoints": {
             "search": "/api/search",
             "health": "/health"
@@ -79,7 +81,7 @@ def health():
             "services": {
                 "api": "ok",
                 "typesense": "ok",
-                "search_approach": "middleware"
+                "search_approach": "decoupled_middleware"
             }
         })
     except Exception as e:
@@ -133,110 +135,26 @@ def search():
         )
 
         # Optional parameters
-        debug = data.get("debug", False)
+        # Auto-enable debug for non-production environments
+        debug = data.get("debug", Config.ENVIRONMENT != "production")
+        confidence_threshold = data.get("confidence_threshold", 0.75)
 
         # ============================================================================
-        # MIDDLEWARE SEARCH IMPLEMENTATION
+        # DECOUPLED MIDDLEWARE SEARCH
         # ============================================================================
-        start_time = time.time()
-
-        # Build search parameters using middleware
-        search_params = {
-            "q": search_query.query,
-            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
-            "query_by_weights": "100,100,4,4,3,3,1",  # Prioritize original fields
-            "nl_query": "true",  # Enable NL search
-            "nl_model_id": MIDDLEWARE_MODEL_ID,  # Use middleware (handles RAG internally)
-            "per_page": search_query.max_results,
-            "sort_by": "brand_priority:desc,_text_match:desc,price:asc"  # In-house brands first
-        }
-
-        # Enable debug mode if requested
-        if debug:
-            search_params["nl_query_debug"] = "true"
-
-        # Execute search via Typesense (which calls middleware)
-        typesense_results = typesense_client.collections[Config.TYPESENSE_COLLECTION_NAME].documents.search(search_params)
-
-        # Transform results to Product models
-        products = []
-        for hit in typesense_results.get("hits", []):
-            doc = hit.get("document", {})
-            try:
-                product = Product(
-                    product_id=str(doc.get("product_id", "")),
-                    sku=doc.get("sku", ""),
-                    name=doc.get("name", ""),
-                    url_key=doc.get("url_key", ""),
-                    stock_status=doc.get("stock_status", "OUT_OF_STOCK"),
-                    product_type=doc.get("product_type", "simple"),
-                    description=doc.get("description"),
-                    short_description=doc.get("short_description"),
-                    price=doc.get("price"),
-                    currency=doc.get("currency", "USD"),
-                    image_url=doc.get("image_url"),
-                    categories=doc.get("categories", [])
-                )
-                products.append(product)
-            except Exception as e:
-                print(f"Error transforming product: {e}")
-                continue
-
-        query_time_ms = (time.time() - start_time) * 1000
-
-        # Extract category info from NL query results (if available)
-        detected_category = None
-        category_confidence = 0.0
-        category_applied = False
-
-        if "parsed_nl_query" in typesense_results:
-            parsed = typesense_results["parsed_nl_query"].get("generated_params", {})
-            filter_by = parsed.get("filter_by", "")
-
-            # Check if category filter was applied by middleware
-            if "categories:=" in filter_by:
-                category_applied = True
-                # Extract category name from filter
-                import re
-                match = re.search(r'categories:=`?([^`&]+)`?', filter_by)
-                if match:
-                    detected_category = match.group(1).strip()
-                    # Middleware applies category when confident, so assume high confidence
-                    category_confidence = 0.85
-
-        # Build response in same format as RAG approach
-        response = SearchResponse(
-            results=products,
-            primary_results=products,  # All results are primary in middleware approach
-            additional_results=None,
-            detected_category=detected_category,
-            category_confidence=category_confidence,
-            category_applied=category_applied,
-            confidence_threshold=0.75,  # Middleware uses this internally
-            total=typesense_results.get("found", 0),
-            query_time_ms=query_time_ms,
-            typesense_query={
-                "approach": "middleware",
-                "nl_model_id": MIDDLEWARE_MODEL_ID,
-                "original_query": search_query.query,
-                "parsed_nl_query": typesense_results.get("parsed_nl_query", {}),
-                "search_time_ms": typesense_results.get("search_time_ms", 0)
-            }
+        # This is an async function, so we need to await it
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        response = loop.run_until_complete(
+            search_engine.search(
+                query=search_query.query,
+                max_results=search_query.max_results,
+                debug=debug,
+                confidence_threshold=confidence_threshold
+            )
         )
-
-        # Return results
-        return jsonify(response.model_dump())
-
-        # ============================================================================
-        # OLD APPROACH (Dual LLM RAG - Commented out for rollback)
-        # ============================================================================
-        # response = search_engine.search(
-        #     query=search_query.query,
-        #     max_results=search_query.max_results,
-        #     debug=debug,
-        #     confidence_threshold=confidence_threshold
-        # )
-        # return jsonify(response.model_dump())
+        return jsonify(response)
 
     except Exception as e:
         traceback.print_exc()
@@ -276,7 +194,8 @@ def search_get():
     try:
         query = request.args.get("q", "")
         max_results = int(request.args.get("limit", 20))
-        debug = request.args.get("debug", "false").lower() == "true"
+        # Auto-enable debug for non-production environments
+        debug = request.args.get("debug", str(Config.ENVIRONMENT != "production")).lower() == "true"
 
         if not query:
             return jsonify({

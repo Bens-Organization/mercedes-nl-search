@@ -75,6 +75,8 @@ class ChatCompletionRequest(BaseModel):
     temperature: Optional[float] = 0.0
     max_tokens: Optional[int] = None
     stream: Optional[bool] = False
+    # Accept pre-retrieved product context (decoupled architecture)
+    context: Optional[List[Dict[str, Any]]] = Field(default=None, description="Pre-retrieved product context for RAG")
 
 
 class ChatCompletionChoice(BaseModel):
@@ -512,8 +514,17 @@ async def chat_completions(request: ChatCompletionRequest):
         # 2. Extract schema info from system message
         schema_info = extract_schema_info(request.messages)
 
-        # 3. Run retrieval search (RAG: get product context)
-        products = await retrieve_products(user_query, limit=20)
+        # 3. Get product context (RAG)
+        # Decoupled Architecture: Accept context from request (no Typesense calls in middleware)
+        if request.context is not None:
+            # Context provided by caller (e.g., staging API) - use it directly
+            products = request.context
+            print(f"[RAG] Using provided context: {len(products)} products", flush=True)
+        else:
+            # Fallback: retrieve products (for direct middleware testing only)
+            # WARNING: This creates circular dependency when called by Typesense
+            products = await retrieve_products(user_query, limit=20)
+            print(f"[RAG] Retrieved products from Typesense: {len(products)} products", flush=True)
 
         # 4. Build enriched prompt with product context
         enriched_messages = build_enriched_prompt(
