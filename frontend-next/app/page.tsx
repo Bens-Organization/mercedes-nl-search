@@ -214,16 +214,18 @@ export default function Home() {
       {stats && !loading && stats.typesenseQuery && (
         <pre className="text-xs mb-4 block max-w-full overflow-auto w-full">
           {(() => {
-            // RAG approach uses different structure for parsed query
+            // Display middleware-extracted query and filters
             const tq = stats.typesenseQuery;
             const parts = [];
 
-            // Use middleware extracted query if available, otherwise fall back to other formats
-            const extractedQuery = tq.parsed_nl_query?.generated_params?.q ||
+            // Decoupled middleware architecture uses extracted_query and filters_applied
+            const extractedQuery = tq.extracted_query ||
+                                   tq.parsed_nl_query?.generated_params?.q ||
                                    tq.nl_extracted_query ||
                                    tq.parsed?.q ||
                                    query;
-            const extractedFilters = tq.parsed_nl_query?.generated_params?.filter_by ||
+            const extractedFilters = tq.filters_applied ||
+                                     tq.parsed_nl_query?.generated_params?.filter_by ||
                                      tq.nl_extracted_filters ||
                                      tq.parsed?.filter_by;
             const extractedSort = tq.parsed_nl_query?.augmented_params?.sort_by ||
@@ -232,17 +234,13 @@ export default function Home() {
 
             if (extractedQuery) parts.push(`"q":"${extractedQuery}"`);
 
-            // Combine category filter (from RAG) with NL-extracted filters
-            const filterParts = [];
-            if (tq.category_applied && tq.detected_category) {
-              filterParts.push(`categories:=\`${tq.detected_category}\``);
-            }
             if (extractedFilters && extractedFilters !== 'none') {
-              filterParts.push(extractedFilters);
-            }
-
-            if (filterParts.length > 0) {
-              parts.push(`"filter_by":"${filterParts.join(' && ')}"`);
+              // Wrap category values in backticks for better readability
+              const formattedFilters = extractedFilters.replace(
+                /categories:=([^&\s]+)/g,
+                'categories:=`$1`'
+              );
+              parts.push(`"filter_by":"${formattedFilters}"`);
             }
 
             if (extractedSort && extractedSort !== 'default') parts.push(`"sort_by":"${extractedSort}"`);
