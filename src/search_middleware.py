@@ -154,9 +154,15 @@ class MiddlewareSearch:
                 "approach": "decoupled_middleware",
                 "middleware_url": self.middleware_url,
                 "original_query": query,
+                "extracted_query": search_params.get("q", ""),  # Show extracted q
+                "filters_applied": search_params.get("filter_by", ""),  # Show filters
                 "retrieval_count": len(retrieval_results),
-                "middleware_params": search_params if debug else {},
-                "category_reasoning": category_reasoning if debug else "",
+                "middleware_params": search_params if debug else {
+                    "q": search_params.get("q", ""),
+                    "filter_by": search_params.get("filter_by", ""),
+                    "sort_by": search_params.get("sort_by", "")
+                },
+                "category_reasoning": category_reasoning if debug else category_reasoning if category_applied else "",
                 "search_time_ms": final_results.get("search_time_ms", 0)
             }
         )
