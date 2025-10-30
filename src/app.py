@@ -21,17 +21,14 @@ Config.validate()
 app = Flask(__name__)
 
 # CORS Configuration
-# For production, update with your actual frontend URL
-CORS(app, origins=[
-    "http://localhost:3000",  # Local Next.js dev
-    "http://localhost:5173",  # Local Vite dev
-    "https://*.vercel.app",   # Vercel deployments
-    "https://*.netlify.app",  # Netlify deployments
-    # Production domain:
-    "https://mercedes-nl-search.vercel.app",
-    # Staging domain:
-    "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app"
-])
+# Allow all origins for now (Vercel wildcard doesn't work with flask-cors)
+# For production, you can restrict this to specific domains
+CORS(app,
+     origins="*",  # Allow all origins
+     supports_credentials=False,
+     allow_headers=["Content-Type", "Authorization"],
+     methods=["GET", "POST", "OPTIONS"]
+)
 
 # ============================================================================
 # DECOUPLED MIDDLEWARE ARCHITECTURE (Active)
