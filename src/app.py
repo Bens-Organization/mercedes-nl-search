@@ -20,7 +20,8 @@ CORS(app, origins=[
     "https://*.vercel.app",   # Vercel deployments
     "https://*.netlify.app",  # Netlify deployments
     # Add your production domain here:
-    "https://mercedes-nl-search.vercel.app"
+    "https://mercedes-nl-search.vercel.app",
+    "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app"
 ])
 
 # Initialize search engine
