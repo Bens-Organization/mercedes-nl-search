@@ -211,32 +211,43 @@ export default function Home() {
       </div>
 
       {/* Parsed Query Display */}
-      {stats && !loading && stats.typesenseQuery && (
+      {stats && !loading && (
         <pre className="text-xs mb-4 block max-w-full overflow-auto w-full">
           {(() => {
             // Display middleware-extracted query and filters
-            const tq = stats.typesenseQuery;
+            // Support both legacy (top-level) and new (nested in typesense_query) API response formats
+            const response = stats as any;
+            const tq = stats.typesenseQuery || {};
             const parts = [];
 
-            // Decoupled middleware architecture uses extracted_query and filters_applied
-            const extractedQuery = tq.extracted_query ||
+            // Check both top-level (legacy API) and nested locations (new API)
+            const extractedQuery = response.extracted_query ||  // Legacy: top-level
+                                   tq.extracted_query ||        // New: nested in typesense_query
                                    tq.parsed_nl_query?.generated_params?.q ||
                                    tq.nl_extracted_query ||
                                    tq.parsed?.q ||
                                    query;
-            const extractedFilters = tq.filters_applied ||
+
+            const extractedFilters = response.filters_applied ||  // Legacy: top-level
+                                     tq.filters_applied ||        // New: nested in typesense_query
                                      tq.parsed_nl_query?.generated_params?.filter_by ||
                                      tq.nl_extracted_filters ||
                                      tq.parsed?.filter_by;
+
             const extractedSort = tq.parsed_nl_query?.augmented_params?.sort_by ||
                                   tq.nl_extracted_sort ||
                                   tq.parsed?.sort_by;
 
-            if (extractedQuery) parts.push(`"q":"${extractedQuery}"`);
+            if (extractedQuery && extractedQuery !== query) {
+              parts.push(`"q":"${extractedQuery}"`);
+            }
 
-            if (extractedFilters && extractedFilters !== 'none') {
+            if (extractedFilters && extractedFilters !== 'none' && extractedFilters !== '') {
+              // Remove leading < if present (legacy format issue)
+              let cleanedFilters = extractedFilters.replace(/^</, '');
+
               // Wrap category values in backticks for better readability
-              const formattedFilters = extractedFilters.replace(
+              const formattedFilters = cleanedFilters.replace(
                 /categories:=([^&\s]+)/g,
                 'categories:=`$1`'
               );
