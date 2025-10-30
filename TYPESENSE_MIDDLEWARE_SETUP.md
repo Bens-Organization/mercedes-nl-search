@@ -1,12 +1,16 @@
-# Typesense Native NL Search Setup Guide
+# Typesense NL Search Setup Guide (Corrected Parameters)
 
-This guide explains how to set up and use the Typesense native NL search integration with corrected boolean parameters.
+This guide explains how to set up and use Typesense NL search integration with corrected boolean parameters. This branch includes **TWO approaches**:
+
+1. **Native NL Search** (Simple) - Basic filter extraction via OpenAI
+2. **RAG Middleware** (Advanced) - Filter extraction + category classification in one LLM call
 
 ## Branch Information
 
 - **Branch**: `feature/typesense-middleware-corrected`
 - **Based on**: `staging` + `feature/typesense-nls-category`
 - **Status**: ✅ All parameters corrected to use booleans
+- **Available Approaches**: Native NL (simple) + RAG Middleware (advanced)
 
 ## What Was Fixed
 
@@ -26,14 +30,37 @@ All `nl_query` parameters now use proper boolean values instead of strings:
 ### Files Modified
 1. **src/search.py** - Main search implementation using Typesense native NL
 2. **src/app.py** - Flask API using `NaturalLanguageSearch` class
-3. **src/openai_middleware.py** - Fixed `nl_query: False` (line 166)
+3. **src/openai_middleware.py** - RAG middleware service + fixed `nl_query: False` (line 166)
 4. **src/search_middleware.py** - Fixed `nl_query: False` (lines 186, 289)
-5. **src/setup_nl_model.py** - Added: Script to register OpenAI model with Typesense
-6. **src/config.py** - Added: ENVIRONMENT variable for environment identification
+5. **src/setup_nl_model.py** - Added: Script to register OpenAI model for native NL
+6. **src/setup_middleware_model.py** - Added: Script to register RAG middleware as NL model
+7. **src/config.py** - Added: ENVIRONMENT variable for environment identification
+
+## Two Approaches Available
+
+This branch provides **two ways** to use Typesense NL search:
+
+### Approach 1: Native NL Search (Simple)
+- **Best for**: Basic filter extraction (price, stock, sort)
+- **Setup**: `python src/setup_nl_model.py`
+- **Model**: Direct OpenAI GPT-4o-mini
+- **Pros**: ✅ Simple, fast, no separate service
+- **Cons**: ❌ No RAG context, basic category detection
+- **LLM Calls**: 1 (Typesense → OpenAI)
+
+### Approach 2: RAG Middleware (Advanced)
+- **Best for**: Advanced category classification with product context
+- **Setup**: `python src/setup_middleware_model.py`
+- **Model**: Custom middleware (vllm/gpt-4o-mini with RAG)
+- **Pros**: ✅ RAG context, better category detection, still 1 LLM call
+- **Cons**: ⚠️ Requires middleware service running
+- **LLM Calls**: 1 (Typesense → Middleware → OpenAI with context)
+
+**Recommendation**: Use **Approach 2 (RAG Middleware)** for production - it provides better accuracy with the same single LLM call cost.
 
 ## Architecture
 
-This implementation uses **Typesense's native NL search** feature:
+### Approach 1: Native NL Search
 
 ```
 User Query
@@ -42,7 +69,7 @@ Flask API (app.py)
     ↓
 NaturalLanguageSearch (search.py)
     ↓
-Typesense Native NL Search (nl_query=True)
+Typesense NL Search (nl_query=True, nl_model_id="openai-gpt4o-mini")
     ↓
 Typesense → OpenAI GPT-4o-mini → Structured Parameters
     ↓
@@ -51,13 +78,48 @@ Typesense Search with Extracted Filters
 Results
 ```
 
-### Key Features
-- ✅ Single LLM call (Typesense handles it)
-- ✅ Automatic filter extraction (price, stock, categories)
+**Key Features**:
+- ✅ Single LLM call (Typesense → OpenAI)
+- ✅ Automatic filter extraction (price, stock)
+- ✅ Basic category detection from schema mappings
+- ✅ No separate middleware service needed
+
+### Approach 2: RAG Middleware (Recommended)
+
+```
+User Query
+    ↓
+Flask API (app.py)
+    ↓
+NaturalLanguageSearch (search.py)
+    ↓
+Typesense NL Search (nl_query=True, nl_model_id="custom-rag-middleware-v2")
+    ↓
+Typesense → Middleware Service
+                ↓
+           Retrieve Products (RAG context)
+                ↓
+           Enrich Prompt with Context
+                ↓
+           OpenAI GPT-4o-mini (BOTH filter extraction + category classification)
+                ↓
+           Returns: {q, filter_by (with category), sort_by}
+                ↓
+Typesense ← Structured Parameters
+    ↓
+Typesense Search with Extracted Filters + Category
+    ↓
+Results
+```
+
+**Key Features**:
+- ✅ Single LLM call (end-to-end)
+- ✅ RAG-enhanced context (retrieves relevant products first)
+- ✅ Advanced category classification (analyzes actual products)
+- ✅ Combined approach: filter extraction + category detection
 - ✅ Native embedding support (automatic when nl_query=True)
 - ✅ Built-in query debugging (nl_query_debug=True)
-- ✅ No circular dependencies (unlike decoupled middleware)
-- ✅ Simpler deployment (no separate middleware service)
+- ⚠️ Requires middleware service running (Railway deployment available)
 
 ## Setup Instructions
 
@@ -78,31 +140,71 @@ FLASK_PORT=5001
 ENVIRONMENT=development
 ```
 
-### Step 1: Register the NL Model with Typesense
+### Step 1: Choose Your Approach and Register Model
 
-**CRITICAL**: This step must be done **once** before using the native NL search.
+**CRITICAL**: You must register a model **once** before using NL search.
+
+#### Option A: Native NL Search (Simple)
 
 ```bash
 # Register the OpenAI model with Typesense
 python src/setup_nl_model.py
-```
 
-This script will:
-1. Register `openai/gpt-4o-mini-2024-07-18` model with Typesense
-2. Configure the system prompt with category mappings
-3. Set temperature to 0.0 for deterministic results
-4. Enable the `nl_query=True` feature
-
-**Check if model is registered:**
-```bash
+# Check if registered
 python src/setup_nl_model.py check
 ```
 
+This registers `openai/gpt-4o-mini-2024-07-18` directly with Typesense.
+
+#### Option B: RAG Middleware (Recommended for Production)
+
+**Step 1a: Start the Middleware Service**
+
+```bash
+# Middleware needs to be running before registration
+python src/openai_middleware.py
+# Or use the Railway deployment: https://web-production-a5d93.up.railway.app
+```
+
+**Step 1b: Register Middleware with Typesense**
+
+```bash
+# Register the middleware as a custom NL model
+python src/setup_middleware_model.py
+
+# For production middleware URL:
+python src/setup_middleware_model.py register https://web-production-a5d93.up.railway.app
+
+# Check if registered
+python src/setup_middleware_model.py check
+```
+
+This registers the RAG middleware service (model ID: `custom-rag-middleware-v2`) with Typesense.
+
 **Expected output:**
 ```
-✓ Model 'openai-gpt4o-mini' exists
-Configuration: {'id': 'openai-gpt4o-mini', 'model_name': 'openai/gpt-4o-mini-2024-07-18', ...}
+✓ Successfully registered middleware model!
+
+Model ID: custom-rag-middleware-v2
+Middleware URL: https://web-production-a5d93.up.railway.app
+
+To use this model in searches:
+  "nl_model_id": "custom-rag-middleware-v2"
 ```
+
+### Step 1c: Configure Which Model to Use
+
+Edit `src/search.py` line 16 to select your approach:
+
+```python
+# Option A: Native NL (simple)
+self.nl_model_id = "openai-gpt4o-mini"
+
+# Option B: RAG Middleware (recommended)
+self.nl_model_id = "custom-rag-middleware-v2"
+```
+
+**Note**: The model ID must match what you registered in Step 1.
 
 ### Step 2: Start the API Server
 
