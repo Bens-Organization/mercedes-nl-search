@@ -138,33 +138,27 @@ FLASK_ENV=development
 FLASK_PORT=5001
 ```
 
-### 3. Setup Natural Language Search Model
-
-```bash
-# Register OpenAI model with Typesense (required for NL search)
-python src/setup_nl_model.py
-```
-
-This enables natural language features like:
-- "latest microscopes" → temporal sorting
-- "Mercedes Scientific gloves" → semantic brand matching (not strict filter)
-- "products on sale" → special_price filtering
-
-### 4. Index Products with Embeddings
-
-**Option A: Neon Database (RECOMMENDED - 34k+ products)**
+### 3. Index Products with Embeddings
 
 ```bash
 # Fetch products from Neon PostgreSQL and index to Typesense
 python src/indexer_neon.py
 ```
 
-**Option B: GraphQL API (LEGACY - 5-10k products)**
+This will:
+- Fetch all 34,000+ products from Neon database
+- Generate embeddings using OpenAI's text-embedding-3-small
+- Index products with semantic search capabilities
+- Typical time: ~35-45 minutes for full catalog
+
+### 4. Start Middleware Server
 
 ```bash
-# Fetch products from Mercedes GraphQL API and index to Typesense
-python src/indexer.py
+# Start OpenAI-compatible middleware for category classification
+python src/openai_middleware.py
 ```
+
+The middleware provides intelligent query parsing and category detection using GPT-4o-mini.
 
 #### What Happens During Indexing
 
@@ -213,31 +207,6 @@ Indexing 34,607 products to Typesense...
 
 **Timing**: ~35-45 minutes for full catalog
 
-**Option B: GraphQL API Indexer (LEGACY)**
-
-The GraphQL indexer uses a **multi-search strategy** to work around the API's 500-product limit:
-
-1. ✓ Creates Typesense collection with basic schema
-2. ✓ Fetches products using 100+ different search terms (letters, numbers, product types)
-3. ✓ Collects unique products across all searches (typically 5,000-10,000+ products)
-4. ✓ Generates embeddings automatically via OpenAI
-5. ✓ Indexes products with semantic search enabled
-
-**Timing**: ~10-20 minutes for 5-10k products
-
-#### Indexer Comparison
-
-| Feature | Neon Database (RECOMMENDED) | GraphQL API (LEGACY) |
-|---------|----------------------------|---------------------|
-| **Products** | 34,000+ | 5,000-10,000 |
-| **Indexing Time** | 35-45 min | 10-20 min |
-| **API Limits** | None | 500 per query |
-| **Product Fields** | 20+ fields | 14 fields |
-| **Attributes** | Brand, size, color, etc. | Basic only |
-| **Temporal Queries** | ✅ Yes (created_at) | ❌ No |
-| **Sale Prices** | ✅ Yes (special_price) | ❌ No |
-| **Requirements** | Neon DB access | Public API |
-
 **For testing** (faster indexing with limited products):
 
 ```bash
@@ -246,15 +215,9 @@ python3
 >>> from src.indexer_neon import NeonProductIndexer
 >>> indexer = NeonProductIndexer()
 >>> indexer.run(max_products=1000)
-
-# GraphQL indexer with 1000 products
-python3
->>> from src.indexer import MercedesProductIndexer
->>> indexer = MercedesProductIndexer()
->>> indexer.run(max_products=1000)
 ```
 
-### 4. Run the API Server
+### 5. Run the API Server
 
 ```bash
 python src/app.py
@@ -461,14 +424,16 @@ The structured query is executed with:
 ```
 mercedes-natural-language-search/
 ├── src/
-│   ├── app.py                 # Flask API server
-│   ├── indexer_neon.py        # Neon database indexer (RECOMMENDED)
-│   ├── indexer.py            # GraphQL API indexer (LEGACY)
-│   ├── search_rag.py         # RAG dual LLM search (CURRENT - 84.6% accuracy)
-│   ├── search.py             # Single LLM search (LEGACY)
-│   ├── setup_nl_model.py     # Natural language model setup
-│   ├── config.py             # Configuration management
-│   └── models.py             # Pydantic data models
+│   ├── app.py                    # Flask API server
+│   ├── config.py                 # Configuration management
+│   ├── models.py                 # Pydantic data models
+│   ├── search_middleware.py      # Middleware search (CURRENT - decoupled architecture)
+│   ├── openai_middleware.py      # OpenAI-compatible middleware server
+│   ├── indexer_neon.py           # Neon database indexer (34k+ products)
+│   └── utilities/                # Utility scripts
+│       ├── export_collection.py
+│       ├── export_nl_system_prompt.py
+│       └── setup_synonyms.py
 ├── docs/
 │   ├── RAG_DUAL_LLM_APPROACH.md              # RAG implementation guide
 │   ├── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison
@@ -508,36 +473,31 @@ mercedes-natural-language-search/
 
 ### Natural Language Search not working
 
-If you see "WARNING: Natural Language Search model not configured":
+If you see "Middleware connection errors":
 
-```bash
-# Setup the NL model (REQUIRED)
-python src/setup_nl_model.py
+1. **Ensure middleware is running**:
+   ```bash
+   # Start the middleware server
+   python src/openai_middleware.py
+   ```
 
-# Verify it was created
-python src/setup_nl_model.py check
-```
-
-This enables advanced filters like brand, size, color, temporal sorting, etc.
+2. **Verify middleware URL**:
+   ```bash
+   # Check MIDDLEWARE_URL in .env
+   echo $MIDDLEWARE_URL
+   ```
 
 ### Embeddings not working
 
-If you see "Fallback: Using keyword-only search":
+If semantic search isn't working:
 
-1. **Check Typesense version**: Requires v29.0+
-   ```bash
-   # Check your Typesense version in the admin dashboard
-   ```
-
-2. **Verify schema**: Collection must have embedding field
+1. **Verify schema**: Collection must have embedding field
    ```bash
    # Re-run indexer to recreate collection with embeddings
-   python src/indexer_neon.py  # RECOMMENDED
-   # or
-   python src/indexer.py       # LEGACY
+   python src/indexer_neon.py
    ```
 
-3. **Check OpenAI API key**: Typesense needs valid API key for auto-embeddings
+2. **Check OpenAI API key**: Typesense needs valid API key for auto-embeddings
    ```bash
    # Verify in .env file
    echo $OPENAI_API_KEY
@@ -556,11 +516,6 @@ If you see "NEON_DATABASE_URL environment variable is required":
    ```bash
    # Test database connection
    python3 -c "import psycopg2; import os; psycopg2.connect(os.getenv('NEON_DATABASE_URL'))"
-   ```
-
-3. **Alternative**: Use GraphQL indexer (limited to 5-10k products):
-   ```bash
-   python src/indexer.py
    ```
 
 ### Slow indexing
@@ -593,38 +548,31 @@ If you see warnings about `.dict()`:
 
 ### How to get all 34,000+ products?
 
-**Use the Neon Database Indexer** (RECOMMENDED):
+**Use the Neon Database Indexer**:
 - Direct database access via `indexer_neon.py`
 - No API limitations
 - Requires `NEON_DATABASE_URL` in `.env`
 - Full catalog with all product attributes
 
-**GraphQL API Limitation** (LEGACY):
-- Public GraphQL API limits results to 500 products per query
-- Multi-search strategy yields only 5,000-10,000 products
-- Missing advanced product attributes (brand, size, color, etc.)
-
 ## Advanced Configuration
 
 ### Customize Embedding Fields
 
-Edit `src/indexer.py` line 45-47:
+Edit `src/indexer_neon.py` - modify the embedding field configuration in the schema:
 
 ```python
 "embed": {
-    "from": ["name", "description", "short_description", "categories"],
+    "from": ["name", "description", "short_description", "categories", "brand"],
     # Add or remove fields to change what's embedded
 }
 ```
 
-### Adjust Semantic Search Weight
+### Adjust Middleware Parameters
 
-Edit `src/search.py` line 188:
-
-```python
-"vector_query": f"embedding:({query.q}, k:{query.per_page * 2})",
-# Increase k for more semantic results
-```
+Edit `src/openai_middleware.py` to customize:
+- Category classification prompt
+- Confidence thresholds
+- Filter extraction logic
 
 ### Use Different Embedding Model
 
@@ -663,11 +611,7 @@ OPENAI_MODEL=gpt-4
 To re-index with new data or after schema changes:
 
 ```bash
-# Neon database (RECOMMENDED - 34k+ products)
 python src/indexer_neon.py
-
-# GraphQL API (LEGACY - 5-10k products)
-python src/indexer.py
 ```
 
 **Note**: Re-indexing will regenerate all embeddings (costs ~$0.60-0.80 for 34k products)
