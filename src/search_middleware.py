@@ -183,7 +183,7 @@ class MiddlewareSearch:
             "prefix": "true,true,true,false,false,false,false,false",
             "num_typos": 2,
             "sort_by": "_text_match:desc",
-            "nl_query": "false"  # NO NL model (avoid circular dependency)
+            "nl_query": False  # NO NL model (avoid circular dependency, boolean not string)
         }
 
         result = self.typesense_client.collections[self.collection_name].documents.search(search_params)
@@ -286,7 +286,7 @@ class MiddlewareSearch:
             "query_by_weights": "100,100,4,4,3,3,1",
             "per_page": max_results,
             "sort_by": params.get("sort_by", "brand_priority:desc,_text_match:desc,price:asc"),
-            "nl_query": "false"  # NO NL model
+            "nl_query": False  # NO NL model (boolean, not string)
         }
 
         if params.get("filter_by"):
