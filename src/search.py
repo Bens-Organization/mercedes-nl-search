@@ -16,8 +16,9 @@ class NaturalLanguageSearch:
         """Initialize search engine."""
         self.typesense_client = typesense.Client(Config.get_typesense_config())
         self.collection_name = Config.TYPESENSE_COLLECTION_NAME
-        # Use the registered NL model ID
-        self.nl_model_id = "openai-gpt4o-mini"
+        # Use the RAG middleware model for better category classification
+        # Options: "openai-gpt4o-mini" (native) or "custom-rag-middleware-v2" (RAG)
+        self.nl_model_id = "custom-rag-middleware-v2"
 
     def search(self, query: str, max_results: int = 20, debug: bool = False,
                confidence_threshold: float = 0.80) -> SearchResponse:
