@@ -115,7 +115,7 @@ class MiddlewareSearch:
         query_time_ms = (time.time() - start_time) * 1000
 
         # Step 6: Build response
-        from src.models import SearchResponse, Product
+        from models import SearchResponse, Product
 
         products = []
         for hit in final_results.get("hits", []):
