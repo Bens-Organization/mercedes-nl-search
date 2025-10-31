@@ -595,25 +595,46 @@ async def generate_vllm_format(request: Request):
     try:
         # Parse request body
         data = await request.json()
-        prompt = data.get("prompt", "")
 
         print("\n" + "=" * 80)
-        print(f"[{datetime.now().isoformat()}] INCOMING vLLM REQUEST FROM TYPESENSE")
+        print(f"[{datetime.now().isoformat()}] INCOMING REQUEST FROM TYPESENSE")
         print("=" * 80)
-        print(f"[DEBUG] Full request data: {json.dumps(data, indent=2)[:500]}...")
-        print(f"[REQUEST] Prompt length: {len(prompt)} chars")
-        if prompt:
-            print(f"[REQUEST] Prompt preview: {prompt[:200]}...")
-            if len(prompt) > 500:
-                print(f"[REQUEST] Prompt tail: ...{prompt[-200:]}")
+        print(f"[DEBUG] Request keys: {list(data.keys())}")
+
+        # Handle both formats:
+        # 1. OpenAI chat format: {"messages": [...], "model": "..."}
+        # 2. vLLM format: {"prompt": "...", ...}
+
+        user_query = None
+
+        if "messages" in data:
+            # OpenAI chat format - extract user query from messages
+            print(f"[FORMAT] OpenAI chat format detected")
+            messages = data.get("messages", [])
+            for msg in reversed(messages):
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    user_query = msg.get("content", "").strip()
+                    break
+            print(f"[EXTRACTED] User query from messages: '{user_query[:100] if user_query else 'NONE'}...'")
+        elif "prompt" in data:
+            # vLLM format with prompt field
+            prompt = data.get("prompt", "")
+            print(f"[FORMAT] vLLM prompt format detected")
+            print(f"[REQUEST] Prompt length: {len(prompt)} chars")
+            if prompt and len(prompt) > 200:
+                print(f"[REQUEST] Prompt preview: {prompt[:200]}...")
+            elif prompt:
+                print(f"[REQUEST] Prompt: {prompt}")
+            user_query = prompt
         else:
-            print(f"[WARNING] Empty prompt received from Typesense!")
+            print(f"[WARNING] No messages or prompt found in request!")
+            user_query = ""
 
         # Validation queries (hello, test, etc.) - skip RAG processing
-        if prompt.strip().lower() in ["hello", "hi", "test", "ping"]:
-            print(f"[VALIDATION] Detected validation query: '{prompt}' - skipping Typesense retrieval")
+        if user_query and user_query.strip().lower() in ["hello", "hi", "test", "ping"]:
+            print(f"[VALIDATION] Detected validation query: '{user_query}' - skipping Typesense retrieval")
             params = {
-                "q": prompt.strip().lower(),
+                "q": user_query.strip().lower(),
                 "filter_by": "",
                 "sort_by": "",
                 "per_page": 20
@@ -623,26 +644,7 @@ async def generate_vllm_format(request: Request):
             print("=" * 80 + "\n")
             return {"text": [json.dumps(params)]}
 
-        # Typesense sends: system_prompt + "\n\n" + user_query
-        # We need to extract just the user query (content after the system prompt)
-        user_query = prompt.strip()
-
-        # Check if this looks like a combined system+user prompt
-        if len(prompt) > 1000:  # System prompt is ~2300 chars
-            # Find where the system prompt ends (look for double newline or "user:" marker)
-            if "\n\n" in prompt:
-                parts = prompt.split("\n\n", 1)
-                if len(parts) > 1:
-                    user_query = parts[1].strip()
-
-            # Alternative: look for explicit "user:" marker
-            if "user:" in prompt.lower():
-                idx = prompt.lower().rfind("user:")
-                user_query = prompt[idx + 5:].strip()
-
-        print(f"[EXTRACTED] User query: '{user_query[:100]}...'")
-
-        # Handle validation queries (empty or just system prompt)
+        # Handle empty/invalid queries
         if not user_query or user_query.lower() in ["", "test", "hello"]:
             print(f"[VALIDATION] Empty/test query detected - returning default params")
             params = {
