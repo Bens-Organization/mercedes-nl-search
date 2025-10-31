@@ -2,7 +2,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from config import Config
-from search import NaturalLanguageSearch
+from search_middleware import MiddlewareSearch  # Use decoupled RAG architecture
 from models import SearchQuery
 import traceback
 
@@ -24,8 +24,8 @@ CORS(app, origins=[
     "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app"
 ])
 
-# Initialize search engine
-search_engine = NaturalLanguageSearch()
+# Initialize search engine (decoupled RAG architecture)
+search_engine = MiddlewareSearch()
 
 
 @app.route("/")

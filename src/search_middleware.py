@@ -19,7 +19,7 @@ Flow:
 import httpx
 import json
 from typing import List, Dict, Any, Optional
-from src.config import Config
+from config import Config
 import typesense
 
 
