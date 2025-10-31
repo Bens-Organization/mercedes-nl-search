@@ -5,6 +5,7 @@ from config import Config
 from search_middleware import MiddlewareSearch  # Use decoupled RAG architecture
 from models import SearchQuery
 import traceback
+import asyncio
 
 # Validate configuration
 Config.validate()
@@ -99,14 +100,14 @@ def search():
             max_results=data.get("max_results", 20)
         )
 
-        # Execute search
-        response = search_engine.search(
+        # Execute search (async method, run synchronously in Flask)
+        response = asyncio.run(search_engine.search(
             query=search_query.query,
             max_results=search_query.max_results
-        )
+        ))
 
-        # Return results
-        return jsonify(response.model_dump())
+        # Return results (response is already a dict from model_dump())
+        return jsonify(response)
 
     except Exception as e:
         traceback.print_exc()
