@@ -434,6 +434,13 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         params.pop("category_confidence", None)
         params.pop("category_reasoning", None)
 
+        # Remove empty string fields (Typesense prefers omitted fields over empty strings)
+        # Empty sort_by can break regex parser
+        if params.get("sort_by") == "":
+            params.pop("sort_by", None)
+        if params.get("filter_by") == "":
+            params.pop("filter_by", None)
+
         # Update the response with modified parameters
         # CRITICAL FIX: Use single-line JSON (no indent) for Typesense's regex parser
         # Multi-line JSON (indent=2) breaks the regex pattern matching
