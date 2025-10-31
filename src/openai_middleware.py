@@ -258,16 +258,18 @@ Determine which category best matches the query based on the retrieved products.
 
 **Decision Criteria**:
 - **Exact match** (SKU or exact product name): Very high confidence (0.9-1.0)
-- **Clear product type** (e.g., "nitrile gloves" → Gloves): High confidence (0.7-0.9)
-- **Product type + attributes** (e.g., "blue nitrile gloves"): High confidence (0.7-0.9)
-- **Brand + product type** (e.g., "Thermo Fisher pipettes"): Medium-high confidence (0.6-0.8)
+- **Clear product type** (e.g., "gloves", "pipettes", "beakers", "nitrile gloves"): High confidence (0.75-0.9)
+- **Product type + attributes** (e.g., "blue nitrile gloves", "latex gloves"): High confidence (0.75-0.9)
+- **Brand + product type** (e.g., "Thermo Fisher pipettes"): Medium-high confidence (0.7-0.85)
 - **Ambiguous or attribute-only**: Low confidence (0.0-0.5) → Return null
 
 **CRITICAL RULES - Return null for category and confidence < 0.75 if**:
 1. **Single attribute word without product type**:
-   - Examples: "clear", "large", "medium", "blue", "sterile", "disposable"
+   - Examples: "clear", "large", "medium", "blue", "sterile", "disposable", "powder-free"
    - These are attributes (color, size, property), NOT product types
-   - Rule: If query is 1-2 words AND doesn't mention a specific product type, return null
+   - Rule: If query mentions ONLY an attribute without naming the actual product, return null
+   - **IMPORTANT**: "gloves", "pipettes", "beakers", "tubes", "slides" ARE product types (not attributes!)
+   - Counter-examples: "gloves" ✅ (product type), "blue" ❌ (attribute), "nitrile gloves" ✅ (product type + material)
 
 2. **Brand name only without product type**:
    - Examples: "Mercedes Scientific", "Ansell", "Yamato", "Thermo Fisher"
@@ -315,8 +317,14 @@ Query: "clear"
 Query: "Mercedes Scientific"
 → {{"q": "Mercedes Scientific", "filter_by": "", "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Brand only, spans many categories"}}
 
+Query: "gloves in stock under $50"
+→ {{"q": "glove", "filter_by": "price:<50 && stock_status:IN_STOCK", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.80, "category_reasoning": "Clear product type (gloves) with filters - basic product names ARE valid"}}
+
 Query: "nitrile gloves under $50"
-→ {{"q": "nitrile glove", "filter_by": "price:<50", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type match with price filter"}}
+→ {{"q": "nitrile glove", "filter_by": "price:<50", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type with material modifier and price filter"}}
+
+Query: "pipettes"
+→ {{"q": "pipette", "filter_by": "", "detected_category": "Products/Pipettes", "category_confidence": 0.80, "category_reasoning": "Clear product type - basic product name is sufficient"}}
 
 Query: "Centrifuge tubes, 50ml capacity"
 → {{"q": "centrifuge tube 50ml", "filter_by": "", "detected_category": "Products/Lab Plasticware/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity specification"}}
