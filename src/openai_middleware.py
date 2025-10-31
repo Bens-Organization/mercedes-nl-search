@@ -392,11 +392,13 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
 
         # Check if we should apply category filter
         if detected_category and category_confidence >= confidence_threshold:
-            # Escape category name for Typesense filter syntax (remove backticks to fix regex parser)
-            escaped_category = detected_category.replace("`", "")
+            # Use only the last segment of category path to avoid regex parsing issues with slashes
+            # e.g., "Products/Gloves & Apparel/Gloves" → "Gloves"
+            category_segments = detected_category.split("/")
+            simple_category = category_segments[-1].strip()
 
-            # Build category filter WITHOUT backticks (they break Typesense's regex parser)
-            category_filter = f"categories:={escaped_category}"
+            # Build category filter with simplified name (no slashes to break regex parser)
+            category_filter = f"categories:={simple_category}"
 
             # Get existing filters and REMOVE any existing category filter
             existing_filter = params.get("filter_by", "").strip()
@@ -417,7 +419,7 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
                 # Just use category filter
                 params["filter_by"] = category_filter
 
-            print(f"[RAG] Category filter applied: '{escaped_category}' (confidence: {category_confidence:.2f})")
+            print(f"[RAG] Category filter applied: '{simple_category}' (from: '{detected_category}', confidence: {category_confidence:.2f})")
             print(f"[RAG] Reasoning: {category_reasoning}")
         else:
             print(f"[RAG] Category filter NOT applied")
