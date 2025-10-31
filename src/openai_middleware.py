@@ -361,7 +361,7 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini") -
         return response.json()
 
 
-def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75) -> Dict[str, Any]:
+def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75, for_typesense_nl: bool = True) -> Dict[str, Any]:
     """
     Apply category filter to search parameters if LLM is confident.
 
@@ -374,6 +374,8 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
     Args:
         openai_response: Raw OpenAI API response
         confidence_threshold: Minimum confidence to apply filter (default: 0.75)
+        for_typesense_nl: If True, removes custom metadata fields and applies category to filter_by
+                          If False, keeps metadata for decoupled architecture (default: True)
 
     Returns:
         Modified OpenAI response with category filter applied (if confident)
@@ -390,30 +392,60 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         category_confidence = params.get("category_confidence", 0.0)
         category_reasoning = params.get("category_reasoning", "")
 
-        # Don't apply category filter here - let the API layer (search_middleware.py) handle it
-        # This avoids duplicate category filters and gives the API layer full control
-        # The middleware just returns category metadata for the API to use
         print(f"[RAG] Category detected: {detected_category or 'None'}")
         print(f"[RAG] Confidence: {category_confidence:.2f} (threshold: {confidence_threshold})")
         print(f"[RAG] Reasoning: {category_reasoning}")
-        print(f"[RAG] NOTE: Category filter will be applied by API layer based on confidence")
 
-        # KEEP category fields for API layer (decoupled architecture)
-        # NOTE: Originally removed for Typesense, but we're NOT using Typesense NL integration
-        # The API layer (search_middleware.py) needs these fields for category metadata
-        # So we DON'T remove them: detected_category, category_confidence, category_reasoning
+        if for_typesense_nl:
+            # Option A: Typesense NL Integration (Single LLM Call)
+            # Apply category filter directly to filter_by and remove custom metadata
+            print(f"[MODE] Typesense NL integration mode - applying category to filter_by")
+
+            if detected_category and category_confidence >= confidence_threshold:
+                # Remove backticks from category (if present)
+                escaped_category = detected_category.replace("`", "")
+                category_filter = f"categories:={escaped_category}"
+
+                # Get existing filters
+                existing_filter = params.get("filter_by", "").strip()
+
+                # Remove any existing category filters to avoid duplicates
+                filter_parts = [part.strip() for part in existing_filter.split('&&') if part.strip()]
+                filter_parts = [part for part in filter_parts if not part.startswith('categories:=')]
+
+                # Add category filter at the beginning
+                if filter_parts:
+                    params["filter_by"] = f"{category_filter} && {' && '.join(filter_parts)}"
+                else:
+                    params["filter_by"] = category_filter
+
+                print(f"[RAG] ✅ Category filter applied: '{escaped_category}'")
+            else:
+                print(f"[RAG] ❌ Category filter NOT applied (low confidence or null)")
+
+            # Remove custom metadata fields (Typesense can't parse them)
+            params.pop("detected_category", None)
+            params.pop("category_confidence", None)
+            params.pop("category_reasoning", None)
+
+            print(f"[RAG] Removed custom metadata fields for Typesense compatibility")
+        else:
+            # Option B: Decoupled Architecture (2 Searches)
+            # Keep metadata for API layer, don't apply category here
+            print(f"[MODE] Decoupled architecture mode - keeping metadata for API layer")
+            print(f"[RAG] NOTE: Category filter will be applied by API layer based on confidence")
 
         # Remove empty string fields (Typesense prefers omitted fields over empty strings)
-        # Empty sort_by can break regex parser
         if params.get("sort_by") == "":
             params.pop("sort_by", None)
         if params.get("filter_by") == "":
             params.pop("filter_by", None)
 
         # Update the response with modified parameters
-        # CRITICAL FIX: Use single-line JSON (no indent) for Typesense's regex parser
-        # Multi-line JSON (indent=2) breaks the regex pattern matching
+        # CRITICAL: Use single-line JSON (no indent) for Typesense's regex parser
         openai_response["choices"][0]["message"]["content"] = json.dumps(params)
+
+        print(f"[RESPONSE] Final params: {json.dumps(params)}")
 
         return openai_response
 
@@ -515,7 +547,8 @@ async def chat_completions(request: ChatCompletionRequest):
         openai_response = await call_openai(enriched_messages, model=request.model)
 
         # 6. Apply category filter if LLM is confident
-        openai_response = apply_category_filter(openai_response)
+        # Use Typesense NL mode by default (removes metadata, applies category to filter_by)
+        openai_response = apply_category_filter(openai_response, for_typesense_nl=True)
 
         # 7. EXIT LOGGING: Show exact response being sent to Typesense
         response_body = json.dumps(openai_response)
