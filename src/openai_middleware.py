@@ -390,42 +390,13 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         category_confidence = params.get("category_confidence", 0.0)
         category_reasoning = params.get("category_reasoning", "")
 
-        # Check if we should apply category filter
-        if detected_category and category_confidence >= confidence_threshold:
-            # Use only the last segment of category path to avoid regex parsing issues with slashes
-            # e.g., "Products/Gloves & Apparel/Gloves" → "Gloves"
-            category_segments = detected_category.split("/")
-            simple_category = category_segments[-1].strip()
-
-            # Build category filter with simplified name (no slashes to break regex parser)
-            category_filter = f"categories:={simple_category}"
-
-            # Get existing filters and REMOVE any existing category filter
-            existing_filter = params.get("filter_by", "").strip()
-
-            # Remove existing category filter using a more robust approach
-            # Split by && to get individual filter conditions
-            filter_parts = [part.strip() for part in existing_filter.split('&&')]
-            # Keep only non-category filters
-            filter_parts = [part for part in filter_parts if not part.startswith('categories:=')]
-            # Rejoin with &&
-            existing_filter = ' && '.join(filter_parts) if filter_parts else ''
-
-            # Combine filters
-            if existing_filter:
-                # Add category filter to existing filters
-                params["filter_by"] = f"{category_filter} && {existing_filter}"
-            else:
-                # Just use category filter
-                params["filter_by"] = category_filter
-
-            print(f"[RAG] Category filter applied: '{simple_category}' (from: '{detected_category}', confidence: {category_confidence:.2f})")
-            print(f"[RAG] Reasoning: {category_reasoning}")
-        else:
-            print(f"[RAG] Category filter NOT applied")
-            print(f"[RAG] Detected: {detected_category or 'None'}")
-            print(f"[RAG] Confidence: {category_confidence:.2f} (threshold: {confidence_threshold})")
-            print(f"[RAG] Reasoning: {category_reasoning}")
+        # Don't apply category filter here - let the API layer (search_middleware.py) handle it
+        # This avoids duplicate category filters and gives the API layer full control
+        # The middleware just returns category metadata for the API to use
+        print(f"[RAG] Category detected: {detected_category or 'None'}")
+        print(f"[RAG] Confidence: {category_confidence:.2f} (threshold: {confidence_threshold})")
+        print(f"[RAG] Reasoning: {category_reasoning}")
+        print(f"[RAG] NOTE: Category filter will be applied by API layer based on confidence")
 
         # KEEP category fields for API layer (decoupled architecture)
         # NOTE: Originally removed for Typesense, but we're NOT using Typesense NL integration
