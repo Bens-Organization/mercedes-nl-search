@@ -102,57 +102,65 @@ OPERATOR RULES:
   "q": "search terms in singular form",
   "filter_by": "filters with && operators (empty string if none)",
   "sort_by": "field:direction (empty string if none)",
-  "per_page": 20
+  "per_page": 20,
+  "detected_category": "full category path or null",
+  "category_confidence": 0.0-1.0,
+  "category_reasoning": "brief explanation"
 }}
 
-CRITICAL: ALWAYS include ALL 4 fields above in EVERY response.
-- Return ONLY these 4 fields - no additional fields
-- filter_by must include category filter when confident about product type
-- Use backticks to escape category values: categories:=`Products/Gloves`
+CRITICAL: ALWAYS include ALL 7 fields above in EVERY response.
+- filter_by should NEVER include category filters - only price, stock, special_price, temporal
+- Category detection goes in detected_category field (separate from filter_by)
+- Use FULL category path: "Products/Gloves & Apparel/Gloves" not "Gloves"
+- category_confidence: 0.0-1.0 based on how confident you are about the category
+- category_reasoning: Brief explanation of why you chose this category
 
-EXAMPLES (All examples show ONLY the 4 required fields):
+EXAMPLES (All examples show ALL 7 required fields):
 
 Query: "nitrile gloves under $30"
-Output: {{"q": "nitrile glove", "filter_by": "categories:=`Products/Gloves & Apparel/Gloves` && price:<30", "sort_by": "", "per_page": 20}}
+Output: {{"q": "nitrile glove", "filter_by": "price:<30", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.90, "category_reasoning": "Clear glove product type with price filter"}}
 
 Query: "yellow slides"
-Output: {{"q": "yellow slide", "filter_by": "categories:=`Products/Lab Equipment/Microscope Slides`", "sort_by": "", "per_page": 20}}
+Output: {{"q": "yellow slide", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Equipment/Microscope Slides", "category_confidence": 0.85, "category_reasoning": "Slides typically refer to microscope slides in lab context"}}
 
 Query: "clear"
-Output: {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20}}
+Output: {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "Ambiguous single-word attribute"}}
 
 Query: "Mercedes Scientific"
-Output: {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20}}
+Output: {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "Brand-only query without product type"}}
 
 Query: "pipettes in stock"
-Output: {{"q": "pipette", "filter_by": "categories:=`Products/Pipettes` && stock_status:=IN_STOCK", "sort_by": "", "per_page": 20}}
+Output: {{"q": "pipette", "filter_by": "stock_status:=IN_STOCK", "sort_by": "", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.88, "category_reasoning": "Clear pipette product type with stock filter"}}
 
 Query: "nitrile gloves that costs $20"
-Output: {{"q": "nitrile glove", "filter_by": "categories:=`Products/Gloves & Apparel/Gloves` && price:=20", "sort_by": "", "per_page": 20}}
+Output: {{"q": "nitrile glove", "filter_by": "price:=20", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.92, "category_reasoning": "Specific glove type with exact price"}}
 
 Query: "beakers under $50"
-Output: {{"q": "beaker", "filter_by": "categories:=`Products/Lab Glassware/Beakers` && price:<50", "sort_by": "", "per_page": 20}}
+Output: {{"q": "beaker", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Glassware/Beakers", "category_confidence": 0.90, "category_reasoning": "Lab glassware product with price filter"}}
 
 Query: "cheapest centrifuge"
-Output: {{"q": "centrifuge", "filter_by": "categories:=`Products/Lab Equipment/Centrifuges`", "sort_by": "price:asc", "per_page": 20}}
+Output: {{"q": "centrifuge", "filter_by": "", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Lab Equipment/Centrifuges", "category_confidence": 0.87, "category_reasoning": "Lab equipment with price sorting"}}
 
 Query: "on sale microscopes"
-Output: {{"q": "microscope", "filter_by": "categories:=`Products/Lab Equipment/Microscopes` && special_price:>0", "sort_by": "", "per_page": 20}}
+Output: {{"q": "microscope", "filter_by": "special_price:>0", "sort_by": "", "per_page": 20, "detected_category": "Products/Lab Equipment/Microscopes", "category_confidence": 0.89, "category_reasoning": "Lab equipment on sale"}}
 
 CRITICAL RULES:
-1. DO NOT extract color/size/brand as filters - keep them in "q" for semantic search
+1. ALWAYS return ALL 7 fields: q, filter_by, sort_by, per_page, detected_category, category_confidence, category_reasoning
+2. NEVER include category in filter_by - category goes ONLY in detected_category field
+3. DO NOT extract color/size/brand as filters - keep them in "q" for semantic search
    - Data is too shallow for strict attribute filtering
    - Semantic search handles color, size, brand matching naturally
-2. ALWAYS keep product type in "q" for semantic search (e.g., "nitrile glove", "pipette")
-3. ALWAYS extract price filter when ANY price appears:
+4. ALWAYS keep product type in "q" for semantic search (e.g., "nitrile glove", "pipette")
+5. ALWAYS extract price filter when ANY price appears:
    - DEFAULT: "costs $X", "cost $X", "priced $X" → price:=X (EXACT match)
    - RANGE: "under $X" → price:<X, "over $X" → price:>X
    - BETWEEN: "$X to $Y" → price:[X..Y]
-4. ALWAYS extract stock filter when stock mentioned (in stock → stock_status:=IN_STOCK)
-5. ALWAYS extract special_price filter for "on sale", "discounted" → special_price:>0
-6. Technical specs (10μL, 100mL) stay in "q" - NEVER as filters
-7. NEVER use sort_by for "popular", "most popular", "best selling" - rely on relevance scoring
-8. Use retrieved product context to determine category (RAG), but be conservative
+6. ALWAYS extract stock filter when stock mentioned (in stock → stock_status:=IN_STOCK)
+7. ALWAYS extract special_price filter for "on sale", "discounted" → special_price:>0
+8. Technical specs (10μL, 100mL) stay in "q" - NEVER as filters
+9. NEVER use sort_by for "popular", "most popular", "best selling" - rely on relevance scoring
+10. Use retrieved product context to determine category (RAG), but be conservative
+11. Use FULL category path in detected_category: "Products/Gloves & Apparel/Gloves" not "Gloves"
 
 IMPORTANT: "costs", "cost", "priced" without range words = EXACT price (price:=X), NOT under (price:<X)"""
 
@@ -201,8 +209,9 @@ def register_model(middleware_url: str = MIDDLEWARE_URL):
 
     model_config = {
         "id": MODEL_ID,
-        "model_name": "vllm/gpt-4o-mini",  # vLLM namespace supports custom endpoints!
-        "api_url": f"{middleware_url}/generate",  # vLLM /generate endpoint (not /v1/chat/completions)
+        "model_name": "openai/gpt-4o-mini",  # Use OpenAI namespace for OpenAI-compatible endpoint
+        "api_key": Config.OPENAI_API_KEY,
+        "api_base": middleware_url,  # Base URL without the endpoint path
         "system_prompt": get_system_prompt(),
         "max_bytes": 16000,
         "temperature": 0.0
