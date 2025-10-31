@@ -427,12 +427,10 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             print(f"[RAG] Confidence: {category_confidence:.2f} (threshold: {confidence_threshold})")
             print(f"[RAG] Reasoning: {category_reasoning}")
 
-        # IMPORTANT: Remove category fields before returning to Typesense
-        # Typesense's regex parser expects ONLY search parameter fields: q, filter_by, sort_by, per_page
-        # Extra fields (detected_category, category_confidence, category_reasoning) break the parser
-        params.pop("detected_category", None)
-        params.pop("category_confidence", None)
-        params.pop("category_reasoning", None)
+        # KEEP category fields for API layer (decoupled architecture)
+        # NOTE: Originally removed for Typesense, but we're NOT using Typesense NL integration
+        # The API layer (search_middleware.py) needs these fields for category metadata
+        # So we DON'T remove them: detected_category, category_confidence, category_reasoning
 
         # Remove empty string fields (Typesense prefers omitted fields over empty strings)
         # Empty sort_by can break regex parser
