@@ -658,22 +658,16 @@ async def generate_vllm_format(request: Request):
             print("=" * 80 + "\n")
             return {"text": [json.dumps(params)]}
 
-        # Call the existing chat_completions logic (reuse the RAG processing)
-        # Create a mock request with the user query
-        from fastapi import Request as FastAPIRequest
-        import io
+        # RAG Approach: Retrieve products for context
+        print(f"[RAG] Retrieving products for context...")
+        products = await retrieve_products(user_query, limit=20)
+        print(f"[RAG] Retrieved {len(products)} products")
 
-        # Build the request data as the chat_completions endpoint expects it
-        request_data = {
-            "model": "gpt-4o-mini",
-            "messages": [
-                {"role": "system", "content": "Extract search parameters from natural language queries for medical/scientific products."},
-                {"role": "user", "content": user_query}
-            ],
-            "temperature": 0.0
-        }
+        # Build enriched prompt with RAG context
+        system_prompt = """Extract search parameters from natural language queries for medical/scientific products."""
+        enriched_messages = build_enriched_prompt(user_query, products, system_prompt)
 
-        # Call OpenAI directly with proper system + user messages
+        # Call OpenAI with RAG context and enforce JSON format
         openai_client = httpx.AsyncClient(timeout=30.0)
         try:
             openai_response = await openai_client.post(
@@ -682,7 +676,12 @@ async def generate_vllm_format(request: Request):
                     "Authorization": f"Bearer {Config.OPENAI_API_KEY}",
                     "Content-Type": "application/json"
                 },
-                json=request_data
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": msg.role, "content": msg.content} for msg in enriched_messages],
+                    "temperature": 0.0,
+                    "response_format": {"type": "json_object"}  # Force JSON output
+                }
             )
             openai_data = openai_response.json()
 
