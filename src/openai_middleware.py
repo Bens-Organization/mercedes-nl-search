@@ -235,6 +235,17 @@ def build_enriched_prompt(
             })
         category_context[category] = samples
 
+    # DEBUG: Log the context being sent to LLM
+    print(f"\n[DEBUG] ===== CONTEXT SENT TO LLM =====")
+    print(f"[DEBUG] Total products: {len(products)}")
+    print(f"[DEBUG] Total categories: {len(category_context)}")
+    print(f"[DEBUG] Categories: {list(category_context.keys())}")
+    for cat, samples in list(category_context.items())[:3]:  # Show first 3 categories
+        print(f"[DEBUG] Category '{cat}': {len(samples)} products")
+        for sample in samples[:2]:  # Show first 2 products
+            print(f"[DEBUG]   - {sample['name']} @ {sample['price']}")
+    print(f"[DEBUG] ================================\n")
+
     # Build enriched prompt (matches RAG classification prompt structure)
     import json
     context_str = json.dumps(category_context, indent=2)
@@ -422,6 +433,11 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
     try:
         # Extract LLM message content
         message_content = openai_response["choices"][0]["message"]["content"]
+
+        # DEBUG: Show raw LLM response
+        print(f"\n[DEBUG] ===== RAW LLM RESPONSE =====")
+        print(f"[DEBUG] {message_content}")
+        print(f"[DEBUG] ==============================\n")
 
         # Parse JSON content
         params = json.loads(message_content)
