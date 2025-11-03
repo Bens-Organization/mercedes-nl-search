@@ -239,52 +239,36 @@ def build_enriched_prompt(
     import json
     context_str = json.dumps(category_context, indent=2)
 
-    enriched_content = f"""Given the user search query and the top product categories with sample products, extract search parameters AND classify the category.
+    enriched_content = f"""Given the user search query and retrieved product categories, extract search parameters AND classify the most relevant product category.
 
 **User Query**: "{user_query}"
 
-**Top Categories with Sample Products**:
+**Retrieved Product Categories with Sample Products**:
 {context_str}
 
-**Task**:
-1. Analyze the query intent and retrieved product context
-2. Classify the most relevant category (be CONSERVATIVE - see rules below)
-3. Extract filters (price, stock, special_price only - follow conservative rules)
-4. Build search query (q field with product type, attributes, descriptors)
-5. Determine sort order (if applicable)
+**Your Task**:
+1. Extract clean search query (keep measurements, materials, descriptors)
+2. Extract filters (price, stock, special_price, temporal only)
+3. **Select the BEST MATCHING category from the retrieved products above**
 
-**Category Classification (CRITICAL - RAG Approach)**:
-Determine which category best matches the query based on the retrieved products.
+**Category Classification (RAG Approach)**:
+- Look at the categories in the retrieved products above
+- Pick the category that BEST matches the user's query intent
+- ONLY choose categories that start with "Products/" (real product categories)
+- SKIP categories that start with "Brand:", "Size:", "Color:" (these are attributes, not categories)
+- If no good match exists, return null
 
-**Decision Criteria**:
-- **Exact match** (SKU or exact product name): Very high confidence (0.9-1.0)
-- **Clear product type** (e.g., "gloves", "pipettes", "beakers", "nitrile gloves"): High confidence (0.75-0.9)
-- **Product type + attributes** (e.g., "blue nitrile gloves", "latex gloves"): High confidence (0.75-0.9)
-- **Brand + product type** (e.g., "Thermo Fisher pipettes"): Medium-high confidence (0.7-0.85)
-- **Ambiguous or attribute-only**: Low confidence (0.0-0.5) → Return null
+**Confidence Guidelines**:
+- **0.9-1.0**: Exact product type match (e.g., "test tubes" → "Products/.../Test Tubes")
+- **0.8-0.9**: Clear product type match (e.g., "gloves" → "Products/.../Gloves")
+- **0.75-0.85**: Product type with material/property (e.g., "nitrile gloves" → "Products/.../Gloves")
+- **< 0.75**: Too ambiguous, return null
 
-**CRITICAL RULES - Return null for category and confidence < 0.75 if**:
-1. **Single attribute word without product type**:
-   - Examples: "clear", "large", "medium", "blue", "sterile", "disposable", "powder-free"
-   - These are attributes (color, size, property), NOT product types
-   - Rule: If query mentions ONLY an attribute without naming the actual product, return null
-   - **IMPORTANT**: "gloves", "pipettes", "beakers", "tubes", "slides" ARE product types (not attributes!)
-   - Counter-examples: "gloves" ✅ (product type), "blue" ❌ (attribute), "nitrile gloves" ✅ (product type + material)
-
-2. **Brand name only without product type**:
-   - Examples: "Mercedes Scientific", "Ansell", "Yamato", "Thermo Fisher"
-   - Brands span many categories, too ambiguous to filter
-   - Rule: If query is only a brand name, return null
-
-3. **Generic attribute categories**:
-   - Avoid categories like "Brand: X", "Size: X", "Color: X"
-   - These are not product categories, they're attributes
-   - Rule: If category name starts with "Brand:", "Size:", "Color:", return null
-
-4. **Highly ambiguous product types**:
-   - Examples: "filters" (could be water, air, syringe, etc.)
-   - Multiple distinct product categories match equally well
-   - Rule: If 3+ categories match equally, return null
+**When to Return null**:
+- Query is only an attribute (e.g., "clear", "blue", "large") without product type
+- Query is only a brand name (e.g., "Mercedes Scientific") without product type
+- No "Products/..." category in retrieved results matches the query
+- Multiple categories match equally well (ambiguous)
 
 **Query Extraction Rules** (Match Typesense NL behavior):
 
@@ -332,34 +316,34 @@ IMPORTANT:
 - ALWAYS extract stock when mentioned (stock_status:=IN_STOCK)
 - ALWAYS extract special_price for "on sale" (special_price:>0)
 
-**Examples** (showing enhanced query extraction):
+**Examples** (RAG-based category selection from retrieved products):
 
-Query: "clear"
-→ {{"q": "clear", "filter_by": "", "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Single attribute word without product type"}}
+Example 1:
+Query: "test tubes glass"
+Retrieved categories: ["Products/Glass & Plasticware/Tubes/Test Tubes", "Brand: Fisher Scientific", "Size: 16mm"]
+→ {{"q": "test tube glass", "filter_by": "", "detected_category": "Products/Glass & Plasticware/Tubes/Test Tubes", "category_confidence": 0.9, "category_reasoning": "Exact match - 'test tubes' maps to Test Tubes category in retrieved products"}}
 
-Query: "Mercedes Scientific"
-→ {{"q": "Mercedes Scientific", "filter_by": "", "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Brand only, spans many categories"}}
-
-Query: "gloves in stock under $50"
-→ {{"q": "glove", "filter_by": "price:<50 && stock_status:IN_STOCK", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.80, "category_reasoning": "Clear product type (gloves) with filters - basic product names ARE valid"}}
-
+Example 2:
 Query: "nitrile gloves under $50"
-→ {{"q": "nitrile glove", "filter_by": "price:<50", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type with material modifier and price filter"}}
+Retrieved categories: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell", "Size: Large"]
+→ {{"q": "nitrile glove", "filter_by": "price:<50", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category in retrieved results"}}
 
-Query: "pipettes"
-→ {{"q": "pipette", "filter_by": "", "detected_category": "Products/Pipettes", "category_confidence": 0.80, "category_reasoning": "Clear product type - basic product name is sufficient"}}
+Example 3:
+Query: "clear"
+Retrieved categories: ["Products/Glass & Plasticware/Beakers", "Products/Lab Plasticware/Containers", "Brand: Corning"]
+→ {{"q": "clear", "filter_by": "", "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Query is only an attribute without product type - too ambiguous"}}
 
-Query: "Centrifuge tubes, 50ml capacity"
-→ {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity specification"}}
-Note: Keep "capacity" - it's a descriptive term that helps search!
+Example 4:
+Query: "Mercedes Scientific"
+Retrieved categories: ["Brand: Mercedes Scientific", "Products/Gloves & Apparel/Gloves", "Products/Pipettes"]
+→ {{"q": "Mercedes Scientific", "filter_by": "", "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Query is only a brand name - multiple product categories exist"}}
 
-Query: "sterile nitrile gloves size large"
-→ {{"q": "sterile nitrile glove large", "filter_by": "", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Product type with material and size descriptors"}}
-Note: Keep "sterile" and "large" - they're important search terms!
+Example 5:
+Query: "centrifuge tubes 50ml capacity"
+Retrieved categories: ["Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "Brand: Celltreat"]
+→ {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity - exact category match in results"}}
 
-Query: "1 liter glass beakers"
-→ {{"q": "1 liter glass beaker", "filter_by": "", "detected_category": "Products/Lab Glassware/Beakers", "category_confidence": 0.85, "category_reasoning": "Product type with volume and material descriptors"}}
-Note: Keep "1 liter" and "glass" - they help find exact matches!
+Note: Keep descriptive terms (capacity, glass, 50ml, etc.) - they improve search relevance!
 """
 
     # Return messages: system prompt + enriched user content
