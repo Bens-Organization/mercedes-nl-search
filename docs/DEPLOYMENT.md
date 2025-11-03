@@ -6,7 +6,7 @@ Complete guide for deploying Mercedes Scientific NL Search to production.
 
 This project is deployed using:
 - **Frontend**: Vercel (Next.js)
-- **Backend API**: Render (Flask/Python)
+- **Backend API**: Render (FastAPI/Python)
 - **Search Engine**: Typesense Cloud (8GB cluster)
 - **Database**: Neon PostgreSQL
 - **AI Services**: OpenAI (GPT-4o-mini + text-embedding-3-small)
@@ -148,9 +148,13 @@ TYPESENSE_PROTOCOL=https
 # Neon Database
 NEON_DATABASE_URL=postgresql://user:pass@host.neon.tech/db?sslmode=require
 
-# Flask
-FLASK_ENV=production
-FLASK_PORT=5001
+# Server Configuration
+ENVIRONMENT=production
+SERVER_PORT=5001
+
+# Backward Compatibility (deprecated)
+# FLASK_ENV=production  # Use ENVIRONMENT instead
+# FLASK_PORT=5001       # Use SERVER_PORT instead
 ```
 
 **How to get these:**
@@ -384,7 +388,7 @@ Add to `frontend-next/app/layout.tsx`:
            ▼
 ┌─────────────────────────────┐
 │  Backend API (Render)       │
-│  - Flask/Python             │
+│  - FastAPI/Python           │
 │  - Query translation        │
 │  - CORS handling            │
 └──────┬──────────────────┬───┘
