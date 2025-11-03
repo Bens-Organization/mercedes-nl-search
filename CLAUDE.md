@@ -670,8 +670,12 @@ OPENAI_MODEL=gpt-4o-mini-2024-07-18
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 TYPESENSE_PORT=443
 TYPESENSE_PROTOCOL=https
-FLASK_ENV=development
-FLASK_PORT=5001
+ENVIRONMENT=development    # Environment: development, staging, production
+SERVER_PORT=5001           # Port for FastAPI server
+
+# Backward Compatibility (deprecated, but still supported)
+# FLASK_ENV=development    # Use ENVIRONMENT instead
+# FLASK_PORT=5001          # Use SERVER_PORT instead
 ```
 
 ## Data Models Reference

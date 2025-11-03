@@ -225,8 +225,8 @@ if __name__ == "__main__":
     print("=" * 60)
     print("Mercedes Scientific Natural Language Search API")
     print("=" * 60)
-    print(f"Environment: {Config.FLASK_ENV}")
-    print(f"Server: http://localhost:{Config.FLASK_PORT}")
+    print(f"Environment: {Config.ENVIRONMENT}")
+    print(f"Server: http://localhost:{Config.SERVER_PORT}")
     print(f"Typesense: {Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}")
     print(f"Collection: {Config.TYPESENSE_COLLECTION_NAME}")
     print(f"OpenAI Model: {Config.OPENAI_MODEL}")
@@ -239,16 +239,16 @@ if __name__ == "__main__":
     print(f"  GET  /docs          - Interactive API documentation (Swagger UI)")
     print(f"  GET  /redoc         - Alternative API documentation (ReDoc)")
     print("\nExample requests:")
-    print(f'  curl -X POST http://localhost:{Config.FLASK_PORT}/api/search \\')
+    print(f'  curl -X POST http://localhost:{Config.SERVER_PORT}/api/search \\')
     print('    -H "Content-Type: application/json" \\')
     print('    -d \'{"query": "sterile gloves under $100"}\'')
-    print(f'\n  curl "http://localhost:{Config.FLASK_PORT}/api/search?q=pipettes%20in%20stock"')
+    print(f'\n  curl "http://localhost:{Config.SERVER_PORT}/api/search?q=pipettes%20in%20stock"')
     print("=" * 60)
     print()
 
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
-        port=Config.FLASK_PORT,
-        reload=Config.FLASK_ENV == "development"
+        port=Config.SERVER_PORT,
+        reload=Config.ENVIRONMENT == "development"
     )
