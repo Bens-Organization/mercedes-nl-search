@@ -457,9 +457,10 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             print(f"[MODE] Typesense NL integration mode - applying category to filter_by")
 
             if detected_category and category_confidence >= confidence_threshold:
-                # Remove backticks from category (if present)
+                # Remove backticks from category (if present), then re-wrap in backticks for Typesense
+                # Backticks are required to escape special characters like & in category names
                 escaped_category = detected_category.replace("`", "")
-                category_filter = f"categories:={escaped_category}"
+                category_filter = f"categories:=`{escaped_category}`"
 
                 # Get existing filters
                 existing_filter = params.get("filter_by", "").strip()
@@ -770,9 +771,10 @@ async def generate_vllm_format(request: Request):
         confidence_threshold = 0.75
 
         if detected_category and category_confidence >= confidence_threshold:
-            # Remove backticks and apply category filter
+            # Remove backticks from category (if present), then re-wrap in backticks for Typesense
+            # Backticks are required to escape special characters like & in category names
             escaped_category = detected_category.replace("`", "")
-            category_filter = f"categories:={escaped_category}"
+            category_filter = f"categories:=`{escaped_category}`"
 
             # Remove existing category filters
             existing_filter = params.get("filter_by", "").strip()
