@@ -286,9 +286,32 @@ Determine which category best matches the query based on the retrieved products.
    - Multiple distinct product categories match equally well
    - Rule: If 3+ categories match equally, return null
 
+**Query Extraction Rules** (Match Typesense NL behavior):
+
+**KEEP These Terms** (Enhance search relevance):
+- **Descriptive nouns**: capacity, volume, size, weight, length, diameter, thickness, width
+- **Measurements with units**: 50ml, 1L, 100mg, 5cm, 10x10, 29.5mm (keep exact format)
+- **Material/composition**: nitrile, latex, plastic, glass, steel, polypropylene, PP, HDPE
+- **Properties/adjectives**: sterile, disposable, reusable, autoclavable, graduated, conical
+- **Colors when specific**: blue, clear, white, amber (not just "colored")
+- **Brands with products**: "Thermo Fisher pipettes" → keep both
+- **Compound product names**: "centrifuge tube", "petri dish", "test tube"
+
+**REMOVE These Words** (Noise):
+- **Conversational fluff**: "I need", "I want", "looking for", "can you find", "show me"
+- **Articles**: "a", "an", "the" (unless part of product name)
+- **Conjunctions in context**: "and", "or", "with" between descriptors (keep meaningful ones)
+- **Filler words**: "some", "any", "please", "thanks"
+- **Question words**: "what", "where", "how" (unless meaningful like "how to")
+
+**TRANSFORM**:
+- **Plurals to singular** for product types: "gloves" → "glove", "tubes" → "tube"
+- **Keep plurals** for measurements: "50ml" stays "50ml", "100mg" stays "100mg"
+- **Normalize spacing** in measurements: "50 ml" → "50ml" OR keep as-is if that's more searchable
+
 **Response Format** (JSON ONLY - no markdown, no code fences):
 {{
-    "q": "search terms in singular form",
+    "q": "descriptive search query (keep measurements, materials, important descriptors)",
     "filter_by": "filters with && (include category if confident)",
     "sort_by": "field:direction",
     "per_page": 20,
@@ -309,7 +332,7 @@ IMPORTANT:
 - ALWAYS extract stock when mentioned (stock_status:=IN_STOCK)
 - ALWAYS extract special_price for "on sale" (special_price:>0)
 
-**Examples**:
+**Examples** (showing enhanced query extraction):
 
 Query: "clear"
 → {{"q": "clear", "filter_by": "", "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Single attribute word without product type"}}
@@ -327,7 +350,16 @@ Query: "pipettes"
 → {{"q": "pipette", "filter_by": "", "detected_category": "Products/Pipettes", "category_confidence": 0.80, "category_reasoning": "Clear product type - basic product name is sufficient"}}
 
 Query: "Centrifuge tubes, 50ml capacity"
-→ {{"q": "centrifuge tube 50ml", "filter_by": "", "detected_category": "Products/Lab Plasticware/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity specification"}}
+→ {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity specification"}}
+Note: Keep "capacity" - it's a descriptive term that helps search!
+
+Query: "sterile nitrile gloves size large"
+→ {{"q": "sterile nitrile glove large", "filter_by": "", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Product type with material and size descriptors"}}
+Note: Keep "sterile" and "large" - they're important search terms!
+
+Query: "1 liter glass beakers"
+→ {{"q": "1 liter glass beaker", "filter_by": "", "detected_category": "Products/Lab Glassware/Beakers", "category_confidence": 0.85, "category_reasoning": "Product type with volume and material descriptors"}}
+Note: Keep "1 liter" and "glass" - they help find exact matches!
 """
 
     # Return messages: system prompt + enriched user content
