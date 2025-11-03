@@ -98,6 +98,11 @@ class MiddlewareSearch:
         category_confidence = search_params.get("category_confidence", 0.0)
         category_reasoning = search_params.get("category_reasoning", "")
 
+        # Capture NL-extracted params BEFORE adding category filter
+        nl_extracted_query = search_params.get("q", "")
+        nl_extracted_filters = search_params.get("filter_by", "") or "none"
+        nl_extracted_sort = search_params.get("sort_by", "") or "default"
+
         # Apply category if confident
         category_applied = False
         if detected_category and category_confidence >= confidence_threshold:
@@ -154,16 +159,27 @@ class MiddlewareSearch:
                 "approach": "decoupled_middleware",
                 "middleware_url": self.middleware_url,
                 "original_query": query,
-                "extracted_query": search_params.get("q", ""),  # Show extracted q
-                "filters_applied": search_params.get("filter_by", ""),  # Show filters
+                # NL extraction results (from single LLM call)
+                "nl_search_enabled": True,
+                "nl_extracted_query": nl_extracted_query,
+                "nl_extracted_filters": nl_extracted_filters,
+                "nl_extracted_sort": nl_extracted_sort,
+                # RAG classification results (from same LLM call)
+                "detected_category": detected_category,
+                "category_confidence": category_confidence,
+                "category_applied": category_applied,
+                "confidence_threshold": confidence_threshold,
+                "category_reasoning": category_reasoning if debug else category_reasoning if category_applied else "",
+                # Search execution details
+                "filters_applied": search_params.get("filter_by", ""),  # Combined filters (NL + category)
                 "retrieval_count": len(retrieval_results),
+                "search_time_ms": final_results.get("search_time_ms", 0),
+                # Debug info (optional)
                 "middleware_params": search_params if debug else {
                     "q": search_params.get("q", ""),
                     "filter_by": search_params.get("filter_by", ""),
                     "sort_by": search_params.get("sort_by", "")
-                },
-                "category_reasoning": category_reasoning if debug else category_reasoning if category_applied else "",
-                "search_time_ms": final_results.get("search_time_ms", 0)
+                }
             }
         )
 
