@@ -296,17 +296,27 @@ def build_enriched_prompt(
 **Response Format** (JSON ONLY - no markdown, no code fences):
 {{
     "q": "descriptive search query (keep measurements, materials, important descriptors)",
-    "filter_by": "filters with && (include category if confident)",
-    "sort_by": "field:direction",
+    "filter_by": "",
+    "sort_by": "",
     "per_page": 20,
-    "detected_category": "Full/Category/Path" or null,
-    "category_confidence": 0.85,
-    "category_reasoning": "Why this category was chosen (or why null)"
+    "detected_category": null,
+    "category_confidence": 0.0,
+    "category_reasoning": ""
 }}
+
+**Field Rules**:
+- `q`: Cleaned query with descriptive terms (required)
+- `filter_by`: Use "" for no filters, OR "price:<50" OR "price:<50 && stock_status:=IN_STOCK" (string)
+- `sort_by`: Use "" for default sort, OR "price:asc" OR "created_at:desc" (string)
+- `per_page`: Always 20 (number)
+- `detected_category`: Use null for no category, OR "Products/Full/Path" (string or null)
+- `category_confidence`: 0.0 to 1.0 (number)
+- `category_reasoning`: Explanation why category was/wasn't chosen (string)
 
 IMPORTANT:
 - Return ONLY the JSON object above. Do NOT wrap it in markdown code fences or any other formatting.
-- Include detected_category, category_confidence, category_reasoning for logging
+- Use "" (empty string) not "field:direction" for sort_by if no sort needed
+- Use null not "null" string for detected_category when no category
 - If detected_category is not null AND category_confidence >= 0.75, it will be applied to filter_by automatically
 - Be CONSERVATIVE with category detection - null is better than wrong category
 
@@ -321,29 +331,34 @@ IMPORTANT:
 Example 1:
 Query: "test tubes glass"
 Retrieved categories: ["Products/Glass & Plasticware/Tubes/Test Tubes", "Brand: Fisher Scientific", "Size: 16mm"]
-→ {{"q": "test tube glass", "filter_by": "", "detected_category": "Products/Glass & Plasticware/Tubes/Test Tubes", "category_confidence": 0.9, "category_reasoning": "Exact match - 'test tubes' maps to Test Tubes category in retrieved products"}}
+→ {{"q": "test tube glass", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Test Tubes", "category_confidence": 0.9, "category_reasoning": "Exact match - 'test tubes' maps to Test Tubes category in retrieved products"}}
 
 Example 2:
 Query: "nitrile gloves under $50"
 Retrieved categories: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell", "Size: Large"]
-→ {{"q": "nitrile glove", "filter_by": "price:<50", "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category in retrieved results"}}
+→ {{"q": "nitrile glove", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category in retrieved results"}}
 
 Example 3:
 Query: "clear"
 Retrieved categories: ["Products/Glass & Plasticware/Beakers", "Products/Lab Plasticware/Containers", "Brand: Corning"]
-→ {{"q": "clear", "filter_by": "", "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Query is only an attribute without product type - too ambiguous"}}
+→ {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Query is only an attribute without product type - too ambiguous"}}
 
 Example 4:
 Query: "Mercedes Scientific"
 Retrieved categories: ["Brand: Mercedes Scientific", "Products/Gloves & Apparel/Gloves", "Products/Pipettes"]
-→ {{"q": "Mercedes Scientific", "filter_by": "", "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Query is only a brand name - multiple product categories exist"}}
+→ {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Query is only a brand name - multiple product categories exist"}}
 
 Example 5:
 Query: "centrifuge tubes 50ml capacity"
 Retrieved categories: ["Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "Brand: Celltreat"]
-→ {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity - exact category match in results"}}
+→ {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity - exact category match in results"}}
 
-Note: Keep descriptive terms (capacity, glass, 50ml, etc.) - they improve search relevance!
+Example 6:
+Query: "pipettes on sale sorted by price"
+Retrieved categories: ["Products/Pipettes", "Brand: Thermo Fisher"]
+→ {{"q": "pipette", "filter_by": "special_price:>0", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Clear product type with sale filter and price sort"}}
+
+Note: Always use "" for empty strings, never use placeholder text like "field:direction"!
 """
 
     # Return messages: system prompt + enriched user content
