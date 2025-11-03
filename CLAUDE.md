@@ -77,7 +77,7 @@ flowchart TB
 
 ### Backend
 - **Language**: Python 3.9+
-- **Web Framework**: Flask
+- **Web Framework**: FastAPI
 - **Data Validation**: Pydantic v2
 - **Environment**: python-dotenv
 
@@ -96,7 +96,7 @@ flowchart TB
 
 ```
 src/
-├── app.py                    # Flask API server (REST endpoints)
+├── app.py                    # FastAPI server (REST endpoints with automatic OpenAPI docs)
 ├── config.py                 # Configuration management
 ├── models.py                 # Pydantic data models
 ├── search_middleware.py      # Middleware search implementation (CURRENT - decoupled architecture)
@@ -149,7 +149,7 @@ frontend-next/
 Manages all configuration via environment variables:
 - OpenAI API keys and models
 - Typesense connection settings
-- Flask server config
+- FastAPI server config
 
 **Important**: All secrets come from `.env` file (never hardcode!)
 
@@ -409,13 +409,16 @@ python test_hybrid_approach.py
 | **New (Hybrid)** | ~2,300 chars | ✅ Constant (unlimited categories) |
 
 ### src/app.py
-Flask REST API with CORS enabled.
+FastAPI REST API with CORS enabled and automatic OpenAPI documentation.
 
 **Endpoints**:
 - `POST /api/search`: Main search endpoint (JSON body)
 - `GET /api/search`: Alternative search (query params)
 - `GET /health`: Health check
 - `GET /`: API info
+- `GET /docs`: Interactive Swagger UI documentation
+- `GET /redoc`: Alternative ReDoc documentation
+- `GET /openapi.json`: OpenAPI schema
 
 ### src/models.py
 Pydantic v2 models for type safety:
@@ -782,8 +785,8 @@ FLASK_PORT=5001
 ## Development Workflow
 
 1. **Setup**: Clone → Install deps → Configure .env → **Setup NL model** → Index data
-2. **Run**: Start Flask API → Start frontend (optional)
-3. **Test**: Send test queries → Verify results
+2. **Run**: Start FastAPI server → Start frontend (optional)
+3. **Test**: Send test queries → Verify results → Check Swagger docs
 4. **Iterate**: Monitor debug output → Adjust if needed
 5. **Deploy**: (Not yet implemented)
 
@@ -932,13 +935,14 @@ See `docs/SYNONYM_TESTING_GUIDE.md` for comprehensive testing documentation.
 ## Dependencies
 
 ### Python (requirements.txt)
-- flask: Web framework
-- flask-cors: CORS support
+- fastapi: Modern web framework with automatic OpenAPI docs
+- uvicorn[standard]: ASGI server for FastAPI
 - typesense: Typesense client
 - openai: OpenAI API client
 - pydantic: Data validation (v2+)
 - python-dotenv: Environment variables
 - requests: HTTP client
+- httpx: Async HTTP client
 - gql[all]: GraphQL client (for legacy indexer)
 - psycopg2-binary: PostgreSQL client (for Neon indexer)
 

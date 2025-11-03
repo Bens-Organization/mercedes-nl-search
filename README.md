@@ -133,9 +133,9 @@ NEON_DATABASE_URL=postgresql://user:pass@host.neon.tech/db?sslmode=require
 # Mercedes GraphQL API (LEGACY - for 5-10k products)
 MERCEDES_GRAPHQL_URL=https://www.mercedesscientific.com/graphql
 
-# Flask Configuration
-FLASK_ENV=development
-FLASK_PORT=5001
+# FastAPI/Server Configuration
+FLASK_ENV=development  # Still used for environment detection
+FLASK_PORT=5001        # Port for FastAPI server
 ```
 
 ### 3. Index Products with Embeddings
@@ -424,7 +424,7 @@ The structured query is executed with:
 ```
 mercedes-natural-language-search/
 ├── src/
-│   ├── app.py                    # Flask API server
+│   ├── app.py                    # FastAPI server (with automatic OpenAPI docs)
 │   ├── config.py                 # Configuration management
 │   ├── models.py                 # Pydantic data models
 │   ├── search_middleware.py      # Middleware search (CURRENT - decoupled architecture)
@@ -460,7 +460,7 @@ mercedes-natural-language-search/
 
 ## Technologies
 
-- **Backend**: Python 3.9+, Flask
+- **Backend**: Python 3.9+, FastAPI
 - **Search Engine**: Typesense (vector + keyword search)
 - **AI/ML**:
   - OpenAI GPT-4 (query translation)
