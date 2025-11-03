@@ -77,9 +77,17 @@ class Search:
 
         print(f"[Typesense NL] Searching with query: '{query}'")
         print(f"[Typesense NL] NL Model: middleware-rag-gpt4o-mini")
+        print(f"[Typesense NL] DEBUG - Search params: {search_params}")
 
         # Execute search
         result = self.typesense_client.collections[self.collection_name].documents.search(search_params)
+
+        # DEBUG: Print full result to see what Typesense returned
+        print(f"[Typesense NL] DEBUG - Full result keys: {list(result.keys())}")
+        if 'request_params' in result:
+            print(f"[Typesense NL] DEBUG - Request params from Typesense: {result['request_params']}")
+        if 'nl_debug' in result:
+            print(f"[Typesense NL] DEBUG - NL Debug info: {result['nl_debug']}")
 
         # Calculate query time
         query_time_ms = (time.time() - start_time) * 1000
