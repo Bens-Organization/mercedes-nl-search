@@ -108,13 +108,15 @@ class Search:
             "results_returned": len(products),
         }
 
-        # Include debug info if requested
-        if debug and "request_params" in result:
-            typesense_query["nl_debug"] = {
-                "processed_query": result.get("request_params", {}).get("q"),
-                "filters_applied": result.get("request_params", {}).get("filter_by"),
-                "sort_applied": result.get("request_params", {}).get("sort_by"),
-            }
+        # Always include middleware-extracted parameters (not just in debug mode)
+        if "request_params" in result:
+            typesense_query["extracted_query"] = result.get("request_params", {}).get("q")
+            typesense_query["filters_applied"] = result.get("request_params", {}).get("filter_by", "")
+            typesense_query["sort_applied"] = result.get("request_params", {}).get("sort_by")
+
+        # Include additional debug info if requested
+        if debug and "parsed_nl_query" in result:
+            typesense_query["parsed_nl_query"] = result.get("parsed_nl_query")
 
         print(f"[Typesense NL] Found {total_found} results in {query_time_ms:.0f}ms")
 

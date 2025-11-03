@@ -155,14 +155,14 @@ This will:
 - Index products with semantic search capabilities
 - Typical time: ~35-45 minutes for full catalog
 
-### 4. Start Middleware Server
+### 4. Register vLLM Middleware Model
 
 ```bash
-# Start OpenAI-compatible middleware for category classification
-python src/openai_middleware.py
+# One-time setup: Register vLLM middleware model in Typesense
+python src/setup_middleware_model.py
 ```
 
-The middleware provides intelligent query parsing and category detection using GPT-4o-mini.
+**Note**: The middleware is deployed on Railway (https://web-production-a5d93.up.railway.app). This command registers the model in Typesense to use the Railway endpoint. The middleware provides intelligent query parsing and category detection using GPT-4o-mini.
 
 #### What Happens During Indexing
 
@@ -431,8 +431,8 @@ mercedes-natural-language-search/
 │   ├── app.py                    # FastAPI server (with automatic OpenAPI docs)
 │   ├── config.py                 # Configuration management
 │   ├── models.py                 # Pydantic data models
-│   ├── search_middleware.py      # Middleware search (CURRENT - decoupled architecture)
-│   ├── openai_middleware.py      # OpenAI-compatible middleware server
+│   ├── search.py                 # Search implementation (CURRENT - Typesense NL with vLLM)
+│   ├── setup_middleware_model.py # Register vLLM middleware model
 │   ├── indexer_neon.py           # Neon database indexer (34k+ products)
 │   └── utilities/                # Utility scripts
 │       ├── export_collection.py
@@ -479,17 +479,16 @@ mercedes-natural-language-search/
 
 If you see "Middleware connection errors":
 
-1. **Ensure middleware is running**:
+1. **Verify middleware model is registered**:
    ```bash
-   # Start the middleware server
-   python src/openai_middleware.py
+   # Check if vLLM middleware model is registered in Typesense
+   python src/setup_middleware_model.py check
    ```
 
-2. **Verify middleware URL**:
-   ```bash
-   # Check MIDDLEWARE_URL in .env
-   echo $MIDDLEWARE_URL
-   ```
+2. **Check Railway middleware status**:
+   - The middleware is deployed at: https://web-production-a5d93.up.railway.app
+   - Check Railway dashboard for service health
+   - Verify middleware logs for incoming requests
 
 ### Embeddings not working
 
@@ -573,10 +572,12 @@ Edit `src/indexer_neon.py` - modify the embedding field configuration in the sch
 
 ### Adjust Middleware Parameters
 
-Edit `src/openai_middleware.py` to customize:
-- Category classification prompt
-- Confidence thresholds
-- Filter extraction logic
+The middleware is deployed on Railway. To customize:
+- **Category classification prompt**: Edit system prompt in middleware deployment
+- **Confidence thresholds**: Adjust in middleware code
+- **Filter extraction logic**: Modify middleware's category classification logic
+
+**Note**: The middleware uses vLLM provider (`middleware-rag-vllm`) registered in Typesense via `src/setup_middleware_model.py`.
 
 ### Use Different Embedding Model
 

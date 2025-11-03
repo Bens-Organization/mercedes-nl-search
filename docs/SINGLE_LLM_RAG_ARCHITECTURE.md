@@ -1,9 +1,23 @@
 # Single-LLM RAG Architecture
 
 **Date**: October 31, 2025
-**Status**: ✅ **DEPLOYED & WORKING**
+**Status**: 📚 **HISTORICAL REFERENCE** (Superseded by Typesense NL Integration)
 **Branch**: `feature/typesense-nl-integration-debug`
 **Version**: v3.2 (Simplified Response)
+
+---
+
+## ⚠️ Architecture Evolution Note
+
+This document describes a **previous architecture** where the API directly managed retrieval search and middleware communication.
+
+**Current Implementation** (November 3, 2025):
+- Uses **Typesense native NL integration** with `nl_query=true`
+- Model: `middleware-rag-vllm` (vLLM provider with Railway endpoint)
+- **Simplified flow**: API → Typesense (calls middleware internally) → Results
+- **UI transparency**: Displays middleware's extracted query and filters to users
+
+See `src/search.py` for current implementation.
 
 ---
 

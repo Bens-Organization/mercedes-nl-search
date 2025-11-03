@@ -99,13 +99,16 @@ src/
 ├── app.py                    # FastAPI server (REST endpoints with automatic OpenAPI docs)
 ├── config.py                 # Configuration management
 ├── models.py                 # Pydantic data models
-├── search_middleware.py      # Middleware search implementation (CURRENT - decoupled architecture)
-├── openai_middleware.py      # OpenAI-compatible middleware server
+├── search.py                 # Search implementation (CURRENT - Typesense NL with vLLM middleware)
+├── setup_middleware_model.py # Register vLLM middleware model in Typesense
 ├── indexer_neon.py           # Neon database indexer (RECOMMENDED - 34k+ products)
 └── utilities/                # Utility scripts
     ├── export_collection.py          # Export Typesense data
     ├── export_nl_system_prompt.py    # Export NL model config
     └── setup_synonyms.py             # Synonym management
+
+middleware/
+└── openai_middleware.py      # OpenAI-compatible RAG middleware (deployed on Railway)
 
 docs/                   # Technical documentation
 ├── RAG_DUAL_LLM_APPROACH.md              # Comprehensive RAG implementation guide
@@ -235,61 +238,73 @@ These fields enable users to search with or without spaces/dashes:
 
 See `MODEL_NUMBER_SEARCH_FIX.md` for comprehensive documentation of this feature.
 
-### src/search_middleware.py (CURRENT)
-Implements decoupled middleware architecture with RAG-based category classification.
+### src/search.py (CURRENT)
+Implements Typesense native NL integration with vLLM middleware for RAG-based search.
 
-**Class**: `MiddlewareSearch`
+**Class**: `Search`
 
-**Architecture** (Decoupled Middleware):
-- **No Typesense NL models** - Avoids circular dependency issues
-- **External middleware** - Separate OpenAI-compatible service for LLM calls
-- **3-stage workflow**:
-  1. Retrieval search (simple text match, no category filter)
-  2. Context extraction + middleware call (category classification)
-  3. Final search with extracted parameters
+**Architecture** (Typesense NL with vLLM Middleware):
+- **Typesense native NL** - Uses `nl_query=true` parameter
+- **vLLM middleware** - Railway-deployed OpenAI-compatible endpoint
+- **Single API call** - Typesense handles middleware communication internally
+- **Model**: `middleware-rag-vllm` (vLLM provider with `api_url`)
+
+**How It Works**:
+1. API calls Typesense with `nl_query=true` and `nl_model_id="middleware-rag-vllm"`
+2. Typesense automatically calls Railway middleware for query processing
+3. Middleware performs RAG-based category classification
+4. Middleware returns search parameters (extracted query, filters, sort)
+5. Typesense executes search with middleware parameters and returns results
 
 **Key Methods**:
-- `search()`: Main entry point, orchestrates the 3-stage workflow
-- `_retrieval_search()`: Simple search to get product context (no LLM)
-- `_extract_context()`: Groups products by category for context
-- `_call_middleware()`: Calls external middleware with context
-- `_parse_middleware_response()`: Extracts search parameters from middleware
-- `_final_search()`: Executes final search with middleware parameters
+- `search()`: Main entry point, calls Typesense with NL parameters
+- `_transform_results()`: Converts Typesense hits to Product objects
 
 **Response Structure**:
 ```python
 {
     "results": [...],
-    "total": 25,
-    "query_time_ms": 3500,
-    "detected_category": "Products/Gloves & Apparel/Gloves",
-    "category_confidence": 0.85,
-    "category_applied": true,
+    "total": 33,
+    "query_time_ms": 4500,
     "typesense_query": {
-        "approach": "decoupled_middleware",
-        "extracted_query": "nitrile glove powder-free",
-        "filters_applied": "categories:=Gloves && price:<30",
-        "middleware_params": {...}
+        "approach": "typesense_nl",
+        "original_query": "nitrile gloves under $50",
+        "extracted_query": "nitrile glove",  # Always included (from middleware)
+        "filters_applied": "categories:=Gloves && price:<50",  # Always included
+        "nl_model_id": "middleware-rag-vllm",
+        "middleware_url": "https://web-production-a5d93.up.railway.app",
+        "results_found": 33,
+        "results_returned": 20
     }
 }
 ```
 
 **Performance**:
-- **Query Time**: ~3-4 seconds
-- **No circular dependency**: Clean separation of concerns
-- **Scalable**: Middleware can be scaled independently
+- **Query Time**: ~4-5 seconds (includes middleware RAG processing)
+- **Model**: vLLM provider with `api_url` pointing to Railway
+- **Reliable**: Proper parameter passing (`api_url` vs deprecated `api_base`)
 
-### src/openai_middleware.py
-OpenAI-compatible middleware server that provides category classification.
+**UI Display**:
+The frontend automatically displays the middleware's extracted query and filters (not the original user query), giving users transparency into how their query was interpreted:
+- Shows: `{"q":"nitrile glove", "filter_by":"categories:=Gloves && price:<50"}`
+- Instead of: `ng:"nitrile gloves under $50"`
 
-**Purpose**: External service that receives query + context and returns search parameters.
+### middleware/openai_middleware.py
+OpenAI-compatible RAG middleware deployed on Railway.
+
+**Purpose**: Receives queries from Typesense, performs RAG-based category classification, returns search parameters.
 
 **Features**:
 - OpenAI-compatible `/v1/chat/completions` endpoint
-- Receives pre-retrieved product context from search_middleware
+- Retrieves product context from Typesense (prevents circular dependency)
 - Uses GPT-4o-mini for category classification
-- Returns structured JSON with search parameters
-- Independent scaling and deployment
+- Returns structured JSON: `{"q": "...", "filter_by": "..."}`
+- Deployed independently on Railway for scalability
+
+**Architecture**:
+- **Deployed**: Railway (https://web-production-a5d93.up.railway.app)
+- **Called by**: Typesense NL model (not directly by API)
+- **Returns**: Extracted query + filters for Typesense to execute
 
 ### src/utilities/export_nl_system_prompt.py
 Exports the registered NL model's system prompt from Typesense (if using NL models).
@@ -662,9 +677,6 @@ TYPESENSE_HOST=...
 # Neon Database (for indexer_neon.py)
 NEON_DATABASE_URL=postgresql://user:pass@host.neon.tech/db?sslmode=require
 
-# Middleware (for search_middleware.py)
-MIDDLEWARE_URL=http://localhost:8000  # Or production middleware URL
-
 # Optional (have defaults)
 OPENAI_MODEL=gpt-4o-mini-2024-07-18
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
@@ -800,8 +812,8 @@ SERVER_PORT=5001           # Port for FastAPI server
 # 1. Index products from Neon database (34k+ products)
 python src/indexer_neon.py
 
-# 2. Start middleware server (required for search)
-python src/openai_middleware.py
+# 2. Register vLLM middleware model in Typesense (one-time setup)
+python src/setup_middleware_model.py
 
 # 3. Start API server
 python src/app.py

@@ -147,11 +147,31 @@ curl "https://azj9dh4uxovql07tp-1.a1.typesense.net/search" \
 
 ## 🚀 Next Steps
 
-1. **Register vLLM model**: `./test_vllm_model_registration.sh`
-2. **Test search**: Watch Railway logs for incoming requests
-3. **Update frontend**: Change `nl_model_id` to `middleware-rag-vllm`
-4. **Verify quality**: Ensure category filters are applied
-5. **Deploy**: Update production after staging validation
+1. ✅ **Register vLLM model**: `./test_vllm_model_registration.sh` (DONE)
+2. ✅ **Test search**: Watch Railway logs for incoming requests (VERIFIED)
+3. ✅ **Update backend**: Changed `nl_model_id` to `middleware-rag-vllm` in `src/search.py`
+4. ✅ **Verify quality**: Category filters are applied correctly
+5. ✅ **UI Transparency**: Backend now always includes `extracted_query` and `filters_applied`
+6. **Deploy**: Update production after staging validation
+
+---
+
+## 🎨 UI Transparency Feature (NEW - Nov 3, 2025)
+
+**What Changed**:
+- Backend now **always** includes `extracted_query` and `filters_applied` in response
+- Frontend displays the middleware's interpreted query (not the original user input)
+- Users see exactly what was searched: `{"q":"nitrile glove", "filter_by":"categories:=Gloves && price:<50"}`
+
+**Benefits**:
+- ✅ Full transparency into query interpretation
+- ✅ Users understand how their search was processed
+- ✅ Helps debug unexpected results
+- ✅ Educational for users learning the system
+
+**Implementation**:
+- `src/search.py`: Always includes extracted parameters in response (not just debug mode)
+- `frontend-next/app/page.tsx`: Already supports displaying extracted query (no changes needed)
 
 ---
 
