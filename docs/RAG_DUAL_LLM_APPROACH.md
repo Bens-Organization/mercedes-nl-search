@@ -93,7 +93,7 @@ flowchart TB
 - Returns `null` for highly ambiguous queries ("filters")
 - Default confidence threshold: 0.75
 
-### 3. Flask API Integration
+### 3. FastAPI Integration
 
 **File**: `src/app.py`
 **Endpoint**: `POST /api/search`
