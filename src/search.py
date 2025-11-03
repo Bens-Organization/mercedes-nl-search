@@ -86,6 +86,8 @@ class Search:
         print(f"[Typesense NL] DEBUG - Full result keys: {list(result.keys())}")
         if 'request_params' in result:
             print(f"[Typesense NL] DEBUG - Request params from Typesense: {result['request_params']}")
+        if 'parsed_nl_query' in result:
+            print(f"[Typesense NL] DEBUG - Parsed NL query (what middleware returned): {result['parsed_nl_query']}")
         if 'nl_debug' in result:
             print(f"[Typesense NL] DEBUG - NL Debug info: {result['nl_debug']}")
 
