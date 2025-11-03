@@ -98,10 +98,11 @@ class MiddlewareSearch:
         category_confidence = search_params.get("category_confidence", 0.0)
         category_reasoning = search_params.get("category_reasoning", "")
 
-        # Capture NL-extracted params BEFORE adding category filter
-        nl_extracted_query = search_params.get("q", "")
-        nl_extracted_filters = search_params.get("filter_by", "") or "none"
-        nl_extracted_sort = search_params.get("sort_by", "") or "default"
+        # Capture LLM-extracted params BEFORE adding category filter
+        # Note: Single middleware LLM does BOTH extraction AND classification (not separate NL model)
+        llm_extracted_query = search_params.get("q", "")
+        llm_extracted_filters = search_params.get("filter_by", "") or "none"
+        llm_extracted_sort = search_params.get("sort_by", "") or "default"
 
         # Apply category if confident
         category_applied = False
@@ -159,19 +160,19 @@ class MiddlewareSearch:
                 "approach": "decoupled_middleware",
                 "middleware_url": self.middleware_url,
                 "original_query": query,
-                # NL extraction results (from single LLM call)
-                "nl_search_enabled": True,
-                "nl_extracted_query": nl_extracted_query,
-                "nl_extracted_filters": nl_extracted_filters,
-                "nl_extracted_sort": nl_extracted_sort,
-                # RAG classification results (from same LLM call)
+                # Single LLM extraction results (middleware does BOTH extraction + classification)
+                "llm_extraction_enabled": True,  # Single middleware LLM (not separate Typesense NL model)
+                "llm_extracted_query": llm_extracted_query,
+                "llm_extracted_filters": llm_extracted_filters,
+                "llm_extracted_sort": llm_extracted_sort,
+                # RAG classification results (SAME LLM call as above)
                 "detected_category": detected_category,
                 "category_confidence": category_confidence,
                 "category_applied": category_applied,
                 "confidence_threshold": confidence_threshold,
                 "category_reasoning": category_reasoning if debug else category_reasoning if category_applied else "",
                 # Search execution details
-                "filters_applied": search_params.get("filter_by", ""),  # Combined filters (NL + category)
+                "filters_applied": search_params.get("filter_by", ""),  # Combined filters (LLM + category)
                 "retrieval_count": len(retrieval_results),
                 "search_time_ms": final_results.get("search_time_ms", 0),
                 # Debug info (optional)
