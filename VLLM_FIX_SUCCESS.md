@@ -137,21 +137,31 @@ Then check Railway logs immediately after.
 - **Keeps measurements**: "50ml", "1L" → preserved
 - **Keeps materials**: "nitrile", "latex" → preserved
 
+### ✅ UI Transparency (NEW)
+- **Displays extracted query**: Shows what the middleware actually searched for
+- **Displays applied filters**: Shows category and other filters applied
+- **User clarity**: Users see `{"q":"nitrile glove", "filter_by":"categories:=Gloves && price:<50"}`
+- **Always visible**: Extracted query displayed for every search (not just debug mode)
+- **Implementation**: Backend always includes `extracted_query` and `filters_applied` in response
+
+**Example UI Display**:
+```json
+{"q":"centrifuge tube 50ml capacity", "filter_by":"categories:=`Products/Glass & Plasticware/Tubes/Centrifuge Tubes`"}
+```
+
+Instead of showing the original user input, the UI displays the middleware's interpreted query, giving users full transparency into how their search was processed.
+
 ---
 
 ## 🚀 Next Steps
 
-### 1. Update Frontend (IMPORTANT)
+### 1. ✅ Frontend Updated
 
-The frontend needs to use the new model ID:
-
-**Find and replace**:
-- Old: `nl_model_id=middleware-rag-gpt4o-mini`
-- New: `nl_model_id=middleware-rag-vllm`
-
-**Files to update**:
-- `frontend-next/app/page.tsx` (or wherever search API is called)
-- Any other files making Typesense search requests
+The frontend has been updated:
+- ✅ Backend (`src/search.py`) uses `nl_model_id=middleware-rag-vllm`
+- ✅ Frontend displays extracted query and filters automatically
+- ✅ Backend always includes `extracted_query` and `filters_applied` in response
+- ✅ No changes needed in `frontend-next/app/page.tsx` (already supports extraction)
 
 ### 2. Test Thoroughly
 
