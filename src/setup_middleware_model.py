@@ -22,13 +22,13 @@ def setup_middleware_model():
     # Build Typesense URL
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
 
-    # Model configuration pointing to middleware
-    model_id = "middleware-rag-gpt4o-mini"
+    # Model configuration pointing to middleware (using vLLM provider)
+    model_id = "middleware-rag-vllm"
     model_config = {
         "id": model_id,
-        "model_name": "openai/gpt-4o-mini-2024-07-18",  # OpenAI-compatible format
-        "api_base": MIDDLEWARE_URL,  # Point to middleware instead of OpenAI
-        "api_key": Config.OPENAI_API_KEY,  # Use real OpenAI API key
+        "model_name": "vllm/gpt-4o-mini",  # Use vLLM provider for custom endpoint
+        "api_url": f"{MIDDLEWARE_URL}/v1/chat/completions",  # Full endpoint URL
+        "api_key": "dummy-key",  # Not validated by middleware
         "max_bytes": 16000,
         "temperature": 0.0,
     }
@@ -63,7 +63,7 @@ def setup_middleware_model():
             existing = check_response.json()
             print(f"Existing configuration:")
             print(f"  - Model: {existing.get('model_name')}")
-            print(f"  - API Base: {existing.get('api_base', 'N/A')}")
+            print(f"  - API URL: {existing.get('api_url', 'N/A')}")
 
             # Ask user if they want to update
             response = input("\nDo you want to delete and recreate it? (y/n): ")
@@ -91,7 +91,7 @@ def setup_middleware_model():
             print("=" * 60)
             print("\nNext steps:")
             print("  1. Deploy middleware to staging/production")
-            print("  2. Test with: nl_query=true, nl_model_id='middleware-rag-gpt4o-mini'")
+            print("  2. Test with: nl_query=true, nl_model_id='middleware-rag-vllm'")
             print("  3. Middleware will handle RAG classification automatically")
         else:
             print(f"\n✗ Error creating model: {create_response.status_code}")
@@ -117,7 +117,7 @@ def setup_middleware_model():
 def check_model_status():
     """Check if middleware model exists and is configured."""
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
-    model_id = "middleware-rag-gpt4o-mini"
+    model_id = "middleware-rag-vllm"
 
     headers = {
         "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
@@ -133,7 +133,7 @@ def check_model_status():
             print(f"\n✓ Model '{model_id}' exists")
             print(f"Configuration:")
             print(f"  - Model: {model.get('model_name')}")
-            print(f"  - API Base: {model.get('api_base', 'N/A')}")
+            print(f"  - API URL: {model.get('api_url', 'N/A')}")
             print(f"  - Temperature: {model.get('temperature')}")
             return True
         else:
