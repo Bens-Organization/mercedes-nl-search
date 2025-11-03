@@ -466,6 +466,7 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             params.pop("detected_category", None)
             params.pop("category_confidence", None)
             params.pop("category_reasoning", None)
+            params.pop("per_page", None)  # Also remove per_page (Typesense sets this)
 
             print(f"[RAG] Removed custom metadata fields for Typesense compatibility")
         else:
