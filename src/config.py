@@ -27,9 +27,9 @@ class Config:
         "https://www.mercedesscientific.com/graphql"
     )
 
-    # Flask
-    FLASK_ENV = os.getenv("FLASK_ENV", "development")
-    FLASK_PORT = int(os.getenv("FLASK_PORT", "5001"))
+    # Server Configuration (with backward compatibility)
+    ENVIRONMENT = os.getenv("ENVIRONMENT") or os.getenv("FLASK_ENV", "development")
+    SERVER_PORT = int(os.getenv("SERVER_PORT") or os.getenv("FLASK_PORT", "5001"))
 
     @classmethod
     def validate(cls):
