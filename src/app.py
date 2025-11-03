@@ -3,8 +3,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from config import Config
-from search_middleware import MiddlewareSearch  # Decoupled RAG architecture
-from search_nl import TypesenseNLSearch  # Typesense NL integration
+from search import Search
 from models import SearchQuery, SearchResponse
 from pydantic import BaseModel, Field
 import traceback
@@ -16,14 +15,13 @@ Config.validate()
 # Initialize FastAPI app
 app = FastAPI(
     title="Mercedes Scientific Natural Language Search API",
-    description="Natural language search API for Mercedes Scientific products",
+    description="Natural language search API using Typesense NL integration with RAG-based category classification",
     version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
 # CORS Configuration
-# For production, update with your actual frontend URL
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -31,7 +29,6 @@ app.add_middleware(
         "http://localhost:5173",  # Local Vite dev
         "https://*.vercel.app",   # Vercel deployments
         "https://*.netlify.app",  # Netlify deployments
-        # Add your production domain here:
         "https://mercedes-nl-search.vercel.app",
         "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app"
     ],
@@ -40,9 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize search engines
-search_engine = MiddlewareSearch()  # Decoupled RAG architecture
-search_engine_nl = TypesenseNLSearch()  # Typesense NL integration
+# Initialize search engine
+search_engine = Search()
 
 
 # Request/Response models
@@ -66,10 +62,12 @@ class ErrorResponse(BaseModel):
 
 @app.get("/")
 async def home():
-    """Health check endpoint."""
+    """API info endpoint."""
     return {
         "status": "ok",
         "message": "Mercedes Scientific Natural Language Search API",
+        "version": "3.0.0",
+        "architecture": "Typesense NL + RAG Middleware",
         "endpoints": {
             "search": "/api/search",
             "health": "/health",
@@ -82,7 +80,7 @@ async def home():
 async def health():
     """Health check for monitoring."""
     try:
-        # Try to retrieve collections to verify Typesense connection
+        # Verify Typesense connection
         collections = search_engine.typesense_client.collections.retrieve()
         return {
             "status": "healthy",
@@ -110,6 +108,12 @@ async def search(request: SearchRequest):
     """
     Search products using natural language.
 
+    Uses Typesense NL integration with RAG-based category classification:
+    - API calls Typesense with nl_query=true
+    - Typesense calls middleware for RAG classification
+    - Middleware returns search parameters with category filter
+    - Results returned to user
+
     Request body:
     {
         "query": "sterile gloves under $100",
@@ -125,19 +129,15 @@ async def search(request: SearchRequest):
     }
     """
     try:
-        # Execute search (native async support in FastAPI)
         response = await search_engine.search(
             query=request.query,
             max_results=request.max_results
         )
-
-        # Return results (response is already a dict from model_dump())
         return response
 
     except Exception as e:
         traceback.print_exc()
 
-        # Distinguish between different error types
         error_message = str(e)
 
         if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
@@ -181,134 +181,10 @@ async def search_get(
     Example: /api/search?q=gloves%20under%20$50&limit=10
     """
     try:
-        # Execute search (native async support)
         response = await search_engine.search(
             query=q,
             max_results=limit
         )
-
-        return response
-
-    except Exception as e:
-        traceback.print_exc()
-
-        # Distinguish between different error types
-        error_message = str(e)
-
-        if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": error_message,
-                    "message": "Search service is currently unavailable"
-                }
-            )
-        elif "authentication" in error_message.lower():
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "error": "Configuration error",
-                    "message": "Search service configuration error"
-                }
-            )
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "error": error_message,
-                    "message": "An error occurred while processing your search"
-                }
-            )
-
-
-@app.post("/api/search-nl", response_model=SearchResponse)
-async def search_nl(request: SearchRequest):
-    """
-    Search products using Typesense NL integration.
-
-    This endpoint uses Typesense's native NL search feature, which automatically
-    calls the middleware for RAG-based category classification and filter extraction.
-
-    Benefits:
-    - Single search call (faster)
-    - Works with any Typesense integration (Magento, Shopify, etc.)
-    - Cleaner architecture
-
-    Trade-offs:
-    - No detailed RAG metadata (category confidence, reasoning)
-    - Typesense handles middleware calls transparently
-
-    Request body:
-    {
-        "query": "sterile gloves under $100",
-        "max_results": 20
-    }
-    """
-    try:
-        # Execute Typesense NL search
-        response = await search_engine_nl.search(
-            query=request.query,
-            max_results=request.max_results,
-            debug=False  # Set to True to see NL processing details
-        )
-
-        return response
-
-    except Exception as e:
-        traceback.print_exc()
-
-        error_message = str(e)
-
-        if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": error_message,
-                    "message": "Search service is currently unavailable"
-                }
-            )
-        elif "authentication" in error_message.lower():
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "error": "Configuration error",
-                    "message": "Search service configuration error"
-                }
-            )
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "error": error_message,
-                    "message": "An error occurred while processing your search"
-                }
-            )
-
-
-@app.get("/api/search-nl", response_model=SearchResponse)
-async def search_nl_get(
-    q: str = Query(..., description="Search query"),
-    limit: int = Query(20, description="Max results", ge=1, le=100),
-    debug: bool = Query(False, description="Enable debug mode")
-):
-    """
-    Search products using Typesense NL integration (query params).
-
-    Query params:
-        q: Search query
-        limit: Max results (default: 20)
-        debug: Enable NL debug mode (default: false)
-
-    Example: /api/search-nl?q=gloves%20under%20$50&limit=10&debug=true
-    """
-    try:
-        # Execute Typesense NL search
-        response = await search_engine_nl.search(
-            query=q,
-            max_results=limit,
-            debug=debug
-        )
-
         return response
 
     except Exception as e:
@@ -348,11 +224,11 @@ if __name__ == "__main__":
     print("=" * 60)
     print("Mercedes Scientific Natural Language Search API")
     print("=" * 60)
+    print(f"Architecture: Typesense NL + RAG Middleware")
     print(f"Environment: {Config.ENVIRONMENT}")
     print(f"Server: http://localhost:{Config.SERVER_PORT}")
     print(f"Typesense: {Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}")
     print(f"Collection: {Config.TYPESENSE_COLLECTION_NAME}")
-    print(f"OpenAI Model: {Config.OPENAI_MODEL}")
     print("=" * 60)
     print("\nEndpoints:")
     print(f"  GET  /              - API info")
@@ -361,11 +237,10 @@ if __name__ == "__main__":
     print(f"  GET  /api/search    - Search products (query params)")
     print(f"  GET  /docs          - Interactive API documentation (Swagger UI)")
     print(f"  GET  /redoc         - Alternative API documentation (ReDoc)")
-    print("\nExample requests:")
+    print("\nExample:")
     print(f'  curl -X POST http://localhost:{Config.SERVER_PORT}/api/search \\')
     print('    -H "Content-Type: application/json" \\')
     print('    -d \'{"query": "sterile gloves under $100"}\'')
-    print(f'\n  curl "http://localhost:{Config.SERVER_PORT}/api/search?q=pipettes%20in%20stock"')
     print("=" * 60)
     print()
 
