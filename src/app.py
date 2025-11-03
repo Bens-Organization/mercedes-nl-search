@@ -3,7 +3,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from config import Config
-from search_middleware import MiddlewareSearch  # Use decoupled RAG architecture
+from search_middleware import MiddlewareSearch  # Decoupled RAG architecture
+from search_nl import TypesenseNLSearch  # Typesense NL integration
 from models import SearchQuery, SearchResponse
 from pydantic import BaseModel, Field
 import traceback
@@ -39,8 +40,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize search engine (decoupled RAG architecture)
-search_engine = MiddlewareSearch()
+# Initialize search engines
+search_engine = MiddlewareSearch()  # Decoupled RAG architecture
+search_engine_nl = TypesenseNLSearch()  # Typesense NL integration
 
 
 # Request/Response models
@@ -191,6 +193,127 @@ async def search_get(
         traceback.print_exc()
 
         # Distinguish between different error types
+        error_message = str(e)
+
+        if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": error_message,
+                    "message": "Search service is currently unavailable"
+                }
+            )
+        elif "authentication" in error_message.lower():
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Configuration error",
+                    "message": "Search service configuration error"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": error_message,
+                    "message": "An error occurred while processing your search"
+                }
+            )
+
+
+@app.post("/api/search-nl", response_model=SearchResponse)
+async def search_nl(request: SearchRequest):
+    """
+    Search products using Typesense NL integration.
+
+    This endpoint uses Typesense's native NL search feature, which automatically
+    calls the middleware for RAG-based category classification and filter extraction.
+
+    Benefits:
+    - Single search call (faster)
+    - Works with any Typesense integration (Magento, Shopify, etc.)
+    - Cleaner architecture
+
+    Trade-offs:
+    - No detailed RAG metadata (category confidence, reasoning)
+    - Typesense handles middleware calls transparently
+
+    Request body:
+    {
+        "query": "sterile gloves under $100",
+        "max_results": 20
+    }
+    """
+    try:
+        # Execute Typesense NL search
+        response = await search_engine_nl.search(
+            query=request.query,
+            max_results=request.max_results,
+            debug=False  # Set to True to see NL processing details
+        )
+
+        return response
+
+    except Exception as e:
+        traceback.print_exc()
+
+        error_message = str(e)
+
+        if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": error_message,
+                    "message": "Search service is currently unavailable"
+                }
+            )
+        elif "authentication" in error_message.lower():
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Configuration error",
+                    "message": "Search service configuration error"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": error_message,
+                    "message": "An error occurred while processing your search"
+                }
+            )
+
+
+@app.get("/api/search-nl", response_model=SearchResponse)
+async def search_nl_get(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(20, description="Max results", ge=1, le=100),
+    debug: bool = Query(False, description="Enable debug mode")
+):
+    """
+    Search products using Typesense NL integration (query params).
+
+    Query params:
+        q: Search query
+        limit: Max results (default: 20)
+        debug: Enable NL debug mode (default: false)
+
+    Example: /api/search-nl?q=gloves%20under%20$50&limit=10&debug=true
+    """
+    try:
+        # Execute Typesense NL search
+        response = await search_engine_nl.search(
+            query=q,
+            max_results=limit,
+            debug=debug
+        )
+
+        return response
+
+    except Exception as e:
+        traceback.print_exc()
+
         error_message = str(e)
 
         if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
