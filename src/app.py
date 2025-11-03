@@ -1,73 +1,110 @@
-"""Flask API server for natural language search."""
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+"""FastAPI server for natural language search."""
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from config import Config
 from search_middleware import MiddlewareSearch  # Use decoupled RAG architecture
-from models import SearchQuery
+from models import SearchQuery, SearchResponse
+from pydantic import BaseModel, Field
 import traceback
-import asyncio
+from typing import Optional
 
 # Validate configuration
 Config.validate()
 
-# Initialize Flask app
-app = Flask(__name__)
+# Initialize FastAPI app
+app = FastAPI(
+    title="Mercedes Scientific Natural Language Search API",
+    description="Natural language search API for Mercedes Scientific products",
+    version="3.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 # CORS Configuration
 # For production, update with your actual frontend URL
-CORS(app, origins=[
-    "http://localhost:3000",  # Local Next.js dev
-    "http://localhost:5173",  # Local Vite dev
-    "https://*.vercel.app",   # Vercel deployments
-    "https://*.netlify.app",  # Netlify deployments
-    # Add your production domain here:
-    "https://mercedes-nl-search.vercel.app",
-    "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app"
-])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # Local Next.js dev
+        "http://localhost:5173",  # Local Vite dev
+        "https://*.vercel.app",   # Vercel deployments
+        "https://*.netlify.app",  # Netlify deployments
+        # Add your production domain here:
+        "https://mercedes-nl-search.vercel.app",
+        "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize search engine (decoupled RAG architecture)
 search_engine = MiddlewareSearch()
 
 
-@app.route("/")
-def home():
+# Request/Response models
+class SearchRequest(BaseModel):
+    """Search request model."""
+    query: str = Field(..., description="Natural language search query")
+    max_results: int = Field(20, description="Maximum number of results to return", ge=1, le=100)
+
+
+class HealthResponse(BaseModel):
+    """Health check response model."""
+    status: str
+    services: dict
+
+
+class ErrorResponse(BaseModel):
+    """Error response model."""
+    error: str
+    message: str
+
+
+@app.get("/")
+async def home():
     """Health check endpoint."""
-    return jsonify({
+    return {
         "status": "ok",
         "message": "Mercedes Scientific Natural Language Search API",
         "endpoints": {
             "search": "/api/search",
-            "health": "/health"
+            "health": "/health",
+            "docs": "/docs"
         }
-    })
+    }
 
 
-@app.route("/health")
-def health():
+@app.get("/health", response_model=HealthResponse)
+async def health():
     """Health check for monitoring."""
     try:
         # Try to retrieve collections to verify Typesense connection
         collections = search_engine.typesense_client.collections.retrieve()
-        return jsonify({
+        return {
             "status": "healthy",
             "services": {
                 "api": "ok",
                 "typesense": "ok"
             }
-        })
+        }
     except Exception as e:
-        return jsonify({
-            "status": "unhealthy",
-            "services": {
-                "api": "ok",
-                "typesense": "error"
-            },
-            "error": str(e)
-        }), 503
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "services": {
+                    "api": "ok",
+                    "typesense": "error"
+                },
+                "error": str(e)
+            }
+        )
 
 
-@app.route("/api/search", methods=["POST"])
-def search():
+@app.post("/api/search", response_model=SearchResponse)
+async def search(request: SearchRequest):
     """
     Search products using natural language.
 
@@ -86,28 +123,14 @@ def search():
     }
     """
     try:
-        # Parse request
-        data = request.get_json()
-
-        if not data or "query" not in data:
-            return jsonify({
-                "error": "Missing 'query' in request body"
-            }), 400
-
-        # Validate with Pydantic
-        search_query = SearchQuery(
-            query=data["query"],
-            max_results=data.get("max_results", 20)
+        # Execute search (native async support in FastAPI)
+        response = await search_engine.search(
+            query=request.query,
+            max_results=request.max_results
         )
 
-        # Execute search (async method, run synchronously in Flask)
-        response = asyncio.run(search_engine.search(
-            query=search_query.query,
-            max_results=search_query.max_results
-        ))
-
         # Return results (response is already a dict from model_dump())
-        return jsonify(response)
+        return response
 
     except Exception as e:
         traceback.print_exc()
@@ -116,24 +139,36 @@ def search():
         error_message = str(e)
 
         if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
-            return jsonify({
-                "error": error_message,
-                "message": "Search service is currently unavailable"
-            }), 503  # Service Unavailable
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": error_message,
+                    "message": "Search service is currently unavailable"
+                }
+            )
         elif "authentication" in error_message.lower():
-            return jsonify({
-                "error": "Configuration error",
-                "message": "Search service configuration error"
-            }), 500
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Configuration error",
+                    "message": "Search service configuration error"
+                }
+            )
         else:
-            return jsonify({
-                "error": error_message,
-                "message": "An error occurred while processing your search"
-            }), 500
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": error_message,
+                    "message": "An error occurred while processing your search"
+                }
+            )
 
 
-@app.route("/api/search", methods=["GET"])
-def search_get():
+@app.get("/api/search", response_model=SearchResponse)
+async def search_get(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(20, description="Max results", ge=1, le=100)
+):
     """
     Search products using query parameters (alternative to POST).
 
@@ -144,21 +179,13 @@ def search_get():
     Example: /api/search?q=gloves%20under%20$50&limit=10
     """
     try:
-        query = request.args.get("q", "")
-        max_results = int(request.args.get("limit", 20))
-
-        if not query:
-            return jsonify({
-                "error": "Missing 'q' query parameter"
-            }), 400
-
-        # Execute search
-        response = search_engine.search(
-            query=query,
-            max_results=max_results
+        # Execute search (native async support)
+        response = await search_engine.search(
+            query=q,
+            max_results=limit
         )
 
-        return jsonify(response.model_dump())
+        return response
 
     except Exception as e:
         traceback.print_exc()
@@ -167,41 +194,34 @@ def search_get():
         error_message = str(e)
 
         if "unavailable" in error_message.lower() or "cannot connect" in error_message.lower():
-            return jsonify({
-                "error": error_message,
-                "message": "Search service is currently unavailable"
-            }), 503  # Service Unavailable
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": error_message,
+                    "message": "Search service is currently unavailable"
+                }
+            )
         elif "authentication" in error_message.lower():
-            return jsonify({
-                "error": "Configuration error",
-                "message": "Search service configuration error"
-            }), 500
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Configuration error",
+                    "message": "Search service configuration error"
+                }
+            )
         else:
-            return jsonify({
-                "error": error_message,
-                "message": "An error occurred while processing your search"
-            }), 500
-
-
-@app.errorhandler(404)
-def not_found(e):
-    """Handle 404 errors."""
-    return jsonify({
-        "error": "Not found",
-        "message": "The requested endpoint does not exist"
-    }), 404
-
-
-@app.errorhandler(500)
-def internal_error(e):
-    """Handle 500 errors."""
-    return jsonify({
-        "error": "Internal server error",
-        "message": "An unexpected error occurred"
-    }), 500
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": error_message,
+                    "message": "An error occurred while processing your search"
+                }
+            )
 
 
 if __name__ == "__main__":
+    import uvicorn
+
     print("=" * 60)
     print("Mercedes Scientific Natural Language Search API")
     print("=" * 60)
@@ -216,6 +236,8 @@ if __name__ == "__main__":
     print(f"  GET  /health        - Health check")
     print(f"  POST /api/search    - Search products (JSON body)")
     print(f"  GET  /api/search    - Search products (query params)")
+    print(f"  GET  /docs          - Interactive API documentation (Swagger UI)")
+    print(f"  GET  /redoc         - Alternative API documentation (ReDoc)")
     print("\nExample requests:")
     print(f'  curl -X POST http://localhost:{Config.FLASK_PORT}/api/search \\')
     print('    -H "Content-Type: application/json" \\')
@@ -224,8 +246,9 @@ if __name__ == "__main__":
     print("=" * 60)
     print()
 
-    app.run(
+    uvicorn.run(
+        "app:app",
         host="0.0.0.0",
         port=Config.FLASK_PORT,
-        debug=Config.FLASK_ENV == "development"
+        reload=Config.FLASK_ENV == "development"
     )
