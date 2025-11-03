@@ -555,8 +555,12 @@ async def chat_completions(request: ChatCompletionRequest):
         openai_response = await call_openai(enriched_messages, model=request.model)
 
         # 6. Apply category filter if LLM is confident
-        # Use Typesense NL mode by default (removes metadata, applies category to filter_by)
-        openai_response = apply_category_filter(openai_response, for_typesense_nl=True)
+        # Determine mode based on whether context was provided:
+        # - context provided (decoupled) → keep metadata for API layer
+        # - no context (Typesense NL) → remove metadata for compatibility
+        for_typesense_nl = request.context is None
+        print(f"[MODE] {'Typesense NL integration' if for_typesense_nl else 'Decoupled architecture'} (context={'not provided' if for_typesense_nl else 'provided'})")
+        openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl)
 
         # 7. EXIT LOGGING: Show exact response being sent to Typesense
         response_body = json.dumps(openai_response)
