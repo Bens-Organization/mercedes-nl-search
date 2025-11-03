@@ -28,7 +28,7 @@ def setup_middleware_model():
         "id": model_id,
         "model_name": "openai/gpt-4o-mini-2024-07-18",  # OpenAI-compatible format
         "api_base": MIDDLEWARE_URL,  # Point to middleware instead of OpenAI
-        "api_key": "dummy-key-not-validated",  # Middleware doesn't validate this
+        "api_key": Config.OPENAI_API_KEY,  # Use real OpenAI API key
         "max_bytes": 16000,
         "temperature": 0.0,
     }
