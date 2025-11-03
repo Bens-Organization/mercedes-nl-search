@@ -63,7 +63,7 @@ class Search:
             "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
             "query_by_weights": "100,100,4,4,3,3,1",
             "per_page": max_results,
-            "nl_query": True,  # Enable natural language processing
+            "nl_query": "true",  # Enable natural language processing (string per Typesense docs)
             "nl_model_id": "middleware-rag-gpt4o-mini",  # Use our middleware model
             "prefix": "true,true,true,true,false,false,false",
             "num_typos": 2,
@@ -73,7 +73,7 @@ class Search:
 
         # Add debug mode if enabled
         if debug:
-            search_params["nl_query_debug"] = True
+            search_params["nl_query_debug"] = "true"  # String per Typesense docs
 
         print(f"[Typesense NL] Searching with query: '{query}'")
         print(f"[Typesense NL] NL Model: middleware-rag-gpt4o-mini")
