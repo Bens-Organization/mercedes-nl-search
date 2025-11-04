@@ -532,9 +532,9 @@ async def root():
     }
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
-    """Health check endpoint"""
+    """Health check endpoint (supports GET and HEAD for UptimeRobot)"""
     try:
         # Test Typesense connection
         typesense_client.collections['mercedes_products'].retrieve()
