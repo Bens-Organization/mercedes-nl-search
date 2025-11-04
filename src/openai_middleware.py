@@ -156,13 +156,14 @@ async def retrieve_products(query: str, limit: int = 20) -> List[Dict[str, Any]]
     try:
         search_params = {
             "q": query,
-            "query_by": "name,description,short_description,sku,categories,brand,size,color",
+            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
+            "query_by_weights": "100,100,4,4,3,3,1",  # Extreme priority to original fields, normalized assist
             "per_page": limit,
-            "prefix": "true,true,true,false,false,false,false,false",
+            "prefix": "true,true,true,true,false,false,false",
             "num_typos": 2,
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
-            "sort_by": "_text_match:desc",  # Removed stock_status:desc (not sortable)
+            "sort_by": "_text_match:desc",
             "nl_query": False  # CRITICAL: Prevent circular dependency (boolean, not string)
         }
 
