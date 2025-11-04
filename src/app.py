@@ -49,9 +49,9 @@ def home():
     })
 
 
-@app.route("/health")
+@app.route("/health", methods=["GET", "HEAD"])
 def health():
-    """Health check for monitoring."""
+    """Health check for monitoring (supports GET and HEAD for UptimeRobot)."""
     try:
         # Try to retrieve collections to verify Typesense connection
         collections = search_engine.typesense_client.collections.retrieve()
