@@ -64,6 +64,12 @@ htmlcov/
 # Typesense Data (local only)
 typesense-data/
 
+# Scratch/Temporary Files
+scratch/
+
+# Railway CLI
+.railway/
+
 # Database exports (optional - keep if you want to commit sample data)
 # database/*.csv
 
