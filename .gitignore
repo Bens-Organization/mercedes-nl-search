@@ -77,5 +77,6 @@ scratch/
 database/*/nl_model_system_prompt.txt
 database/*/nl_model_system_prompt.json
 
-# Local-only documentation
+# Claude Code local settings
+.claude/settings.local.json
 .claude/commands/timeout.md
