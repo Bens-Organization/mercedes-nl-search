@@ -12,7 +12,7 @@ Usage:
 """
 
 import typesense
-from config import Config
+from src.config import Config
 from typing import List, Dict
 import sys
 
