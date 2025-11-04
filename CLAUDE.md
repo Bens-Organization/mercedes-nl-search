@@ -29,28 +29,29 @@ This file provides context for AI assistants (like Claude) working on this codeb
 1. **Neon Database Indexer** (RECOMMENDED): Direct access to 34,000+ products from Neon PostgreSQL database
 2. **GraphQL API Indexer** (LEGACY): Limited to 5,000-10,000 products due to API's 500-product limit
 
-### Key Innovation: Dual LLM RAG Approach
+### Key Innovation: Typesense NL + RAG Middleware
 
-The system uses a **dual LLM approach** that combines:
-1. **LLM Call 1**: Natural language query translation via Typesense NL (filter extraction)
-2. **LLM Call 2**: RAG-based category classification (intelligent category detection)
+The system uses **Typesense NL integration with RAG middleware** that combines:
+1. **Single API call** to Typesense with natural language processing enabled
+2. **Middleware handles RAG internally**: Retrieves context, performs category classification with GPT-4o-mini
+3. **Typesense executes search** with middleware-generated parameters (query + filters + category)
 
-This achieves **84.6% accuracy** on the test dataset while providing transparent reasoning for search decisions.
+This provides intelligent category detection with transparent reasoning while maintaining a simple single-call API.
 
-**Full Documentation**: See `docs/RAG_DUAL_LLM_APPROACH.md` for comprehensive details.
+**Full Documentation**: See `docs/FEATURE_STATUS.md` for comprehensive details.
 
 ## Architecture
 
 ```mermaid
 flowchart TB
     A["👤 User Query<br/>nitrile gloves, powder-free, in stock, under $30"]
-    B["🤖 LLM Call 1: NL Query Translation<br/>Typesense NL Model"]
-    C["📊 Extracted<br/>q: nitrile glove powder-free<br/>filter_by: stock_status:=IN_STOCK && price:<30"]
-    D["🔍 Retrieval Search<br/>20 products with NL filters<br/>NO category filter yet"]
-    E["📦 Context Extraction<br/>Group by categories<br/>Sample products per category"]
-    F["🤖 LLM Call 2: RAG Classification<br/>GPT-4o-mini analyzes context"]
-    G["✅ Category Detected<br/>Products/Gloves & Apparel/Gloves<br/>Confidence: 0.85"]
-    H["🎯 Final Search<br/>categories:=Gloves<br/>&& stock_status:=IN_STOCK<br/>&& price:<30"]
+    B["🌐 FastAPI Backend<br/>/api/search"]
+    C["🔍 Typesense NL Search<br/>nl_query=true, nl_model_id=middleware-rag-vllm"]
+    D["🤖 Railway Middleware<br/>RAG Processing"]
+    E["📦 Retrieves 20 Products<br/>Groups by categories"]
+    F["🧠 GPT-4o-mini Classification<br/>Analyzes context, detects category"]
+    G["📤 Returns Search Params<br/>q: nitrile glove powder-free<br/>filter_by: categories:=Gloves && stock_status:=IN_STOCK && price:<30"]
+    H["🎯 Typesense Executes Search<br/>With middleware parameters"]
     I["✨ Results<br/>3 nitrile gloves, powder-free, in stock, under $30"]
 
     A --> B
@@ -63,11 +64,11 @@ flowchart TB
     H --> I
 
     style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
-    style B fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
-    style C fill:#f5f5f5,stroke:#616161,stroke-width:2px,color:#000
-    style D fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000
-    style E fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#000
-    style F fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
+    style B fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000
+    style C fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
+    style D fill:#fce4ec,stroke:#c2185b,stroke-width:3px,color:#000
+    style E fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000
+    style F fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#000
     style G fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
     style H fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
     style I fill:#b2ebf2,stroke:#0097a7,stroke-width:3px,color:#000
@@ -107,21 +108,30 @@ src/
     ├── export_nl_system_prompt.py    # Export NL model config
     └── setup_synonyms.py             # Synonym management
 
-middleware/
-└── openai_middleware.py      # OpenAI-compatible RAG middleware (deployed on Railway)
+src/openai_middleware.py  # OpenAI-compatible RAG middleware (deployed on Railway)
 
 docs/                   # Technical documentation
-├── RAG_DUAL_LLM_APPROACH.md              # Comprehensive RAG implementation guide
+├── FEATURE_STATUS.md                     # Latest feature implementation status
+├── DEPLOYMENT.md                         # Production deployment guide
 ├── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison of approaches
-└── SYNONYM_TESTING_GUIDE.md              # Synonym testing documentation and verification
+├── BRAND_PRIORITY_IMPLEMENTATION.md      # Brand priority feature documentation
+├── SYNONYM_TESTING_GUIDE.md              # Synonym testing documentation
+└── README_TESTS.md                       # Test documentation
 
-tests/                  # Tests and evaluation results
-├── test_category_classification.py  # RAG test suite (26 cases)
-├── category_test_cases.py           # Test dataset
-├── test_synonyms.py                 # Comprehensive synonym testing (all-in-one)
-├── EVALUATION_RESULTS_FINAL.md      # Detailed RAG evaluation results
-├── EVALUATION_RESULTS.md            # Initial evaluation
-└── FINAL_SUMMARY.md                 # Executive implementation summary
+tests/                  # Tests and evaluation
+├── test_category_classification.py  # Category classification tests (26 cases)
+├── test_model_number_search.py      # Model number search fix tests
+├── test_middleware_fix.py           # Middleware retrieval tests
+├── test_full_middleware_flow.py     # End-to-end middleware flow tests
+├── test_synonyms.py                 # Comprehensive synonym testing
+├── test_brand_priority.py           # Brand priority feature tests
+├── test_hybrid_approach.py          # Hybrid search approach tests
+└── category_test_cases.py           # Test dataset
+
+scripts/tests/          # Shell test scripts
+├── test_rest_api.sh                 # REST API tests
+├── test_staging_api.sh              # Staging environment tests
+└── ... (9 shell test scripts)
 
 database/
 ├── qg91lms7w5rveht3p-1.a1.typesense.net/  # Typesense instance exports (organized by host)
@@ -137,13 +147,13 @@ frontend-next/
 
 # Root-level documentation
 ├── README.md           # User-facing documentation
-├── CLAUDE.md          # AI assistant context (this file)
-└── DEPLOYMENT.md      # Production deployment guide
+└── CLAUDE.md          # AI assistant context (this file)
 ```
 
 **Important**:
-- **Evaluation/summary docs** are in `tests/` directory (not root)
 - **Technical docs** are in `docs/` directory
+- **Tests** are in `tests/` directory
+- **Shell scripts** are in `scripts/tests/` directory
 - All flowcharts use **Mermaid markdown** with dark text on light backgrounds
 
 ## Key Files Explained
@@ -978,23 +988,21 @@ For questions or issues:
 
 ---
 
-**Last Updated**: 2025-10-22
+**Last Updated**: 2025-11-04
 
-**Project Status**: Production-ready with RAG dual LLM approach
+**Project Status**: Production-ready with Typesense NL + RAG middleware
 
-**Version**: 2.2.2 (Model Number & SKU Search Fix)
+**Version**: 2.3.0 (Model Number Search + Synonym Matching + Codebase Cleanup)
 
 **Recent Changes**:
 
-**v2.2.2** (Oct 22, 2025):
-- ✅ **MODEL NUMBER SEARCH FIX**: Implemented normalized fields for model number and SKU variations
-- ✅ **Search improvements**: "TNR700S" finds "TNR 700S", "blu touch" finds "BluTouch" products
-- ✅ **Normalized fields added**: `sku_normalized` and `name_normalized` with all separators removed
-- ✅ **Extreme weighting strategy**: 100:4 ratio prioritizes original fields while maintaining edge case support
-- ✅ **Search quality maintained**: General queries work excellently, edge cases now pass
-- ✅ **Sample query updated**: Replaced restrictive query with "Gloves in stock under $50"
-- ✅ **Test verification**: Both test cases verified working correctly
-- ✅ **Production ready**: Branch `feature/model-number-search-fix` verified and tested
+**v2.3.0** (Nov 4, 2025):
+- ✅ **MODEL NUMBER SEARCH FIX**: Implemented normalized fields for SKU/model variations
+- ✅ **Middleware retrieval fix**: Updated `retrieve_products()` to use normalized fields with proper weighting
+- ✅ **Synonym matching**: 35 synonym groups configured and tested (pipette/pipettor, nitrile/nbr, etc.)
+- ✅ **Codebase cleanup**: Organized tests, docs, removed obsolete files
+- ✅ **Documentation updates**: Updated CLAUDE.md to reflect Typesense NL + middleware architecture
+- ✅ Tests: "tnr700s" → "TNR 700S", "blu touch" → "BluTouch" products working correctly
 
 **v2.2.1** (Oct 21, 2025):
 - ✅ **CONSERVATIVE FILTERING**: Switched from aggressive to conservative attribute filtering
@@ -1006,16 +1014,13 @@ For questions or issues:
 - ✅ **Documentation updates**: CLAUDE.md and README.md reflect conservative approach
 
 **v2.2.0** (Oct 17, 2025):
-- ✅ **DUAL LLM RAG APPROACH**: Implemented RAG-based category classification
-- ✅ **84.6% accuracy** on test dataset (3 improvements over baseline)
-- ✅ Two-stage LLM workflow: NL filter extraction → RAG category classification
-- ✅ Conservative category detection with confidence thresholds
-- ✅ Fixed model ID resolution issue (UUID vs string ID)
-- ✅ Updated frontend to display combined RAG category + NL filters
-- ✅ Auto-enabled debug mode for localhost development
-- ✅ Created comprehensive documentation: `docs/RAG_DUAL_LLM_APPROACH.md`
-- ✅ Migrated from `search.py` to `search_rag.py` in production API
-- ✅ Improved handling of ambiguous queries ("clear", "filters", etc.)
+- ✅ **TYPESENSE NL + MIDDLEWARE**: Implemented single-call architecture with Railway middleware
+- ✅ **RAG category classification**: Middleware handles RAG internally with GPT-4o-mini
+- ✅ **Conservative category detection** with confidence thresholds
+- ✅ **Fixed vLLM provider setup**: Used `api_url` parameter (not deprecated `api_base`)
+- ✅ **Updated frontend**: Displays middleware-extracted query and filters
+- ✅ **Auto-enabled debug mode** for localhost development
+- ✅ **Improved handling** of ambiguous queries ("clear", "filters", etc.)
 
 **v2.1.0** (Oct 15, 2025):
 - ✅ **SCALABILITY FIX**: Implemented hybrid approach for unlimited category support
