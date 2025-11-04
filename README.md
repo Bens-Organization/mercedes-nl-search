@@ -1,18 +1,19 @@
 # Mercedes Scientific Natural Language Search
 
-AI-powered natural language search for Mercedes Scientific products using **RAG Dual LLM Approach** (Retrieval-Augmented Generation) with Typesense and OpenAI.
+AI-powered natural language search for Mercedes Scientific products using **Typesense NL + RAG Middleware** (Retrieval-Augmented Generation) with single-call architecture.
 
 ## Production Deployment
 
-**Status**: ✅ **LIVE (v2.2.0)**
+**Status**: ✅ **LIVE (v2.3.0)**
 
 - **Frontend**: [https://mercedes-nl-search.vercel.app](https://mercedes-nl-search.vercel.app)
 - **Backend API**: [https://mercedes-search-api.onrender.com](https://mercedes-search-api.onrender.com)
 - **Search Engine**: Typesense Cloud (8GB cluster)
+- **Middleware**: Railway (RAG processing)
 - **Database**: Neon PostgreSQL
-- **AI Models**: OpenAI GPT-4o-mini (dual LLM) + text-embedding-3-small
+- **AI Models**: OpenAI GPT-4o-mini (RAG middleware) + text-embedding-3-small
 
-**Deployed Stack**: 34,607 products indexed with full semantic search and intelligent category classification.
+**Deployed Stack**: 34,607 products indexed with full semantic search, intelligent category classification, and synonym matching.
 
 **Documentation**:
 - **Production Deployment**: See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
@@ -20,68 +21,83 @@ AI-powered natural language search for Mercedes Scientific products using **RAG 
 
 ## Features
 
-- 🤖 **Dual LLM RAG Approach**: Two-stage AI processing for superior accuracy (84.6%)
-- 🔍 **Intelligent Category Classification**: Context-aware category detection with confidence scoring
-- 🧠 **Semantic Understanding**: Uses OpenAI embeddings to understand query intent
-- 🎯 **Smart Query Translation**: GPT-4o-mini extracts filters, sorts, and attributes
-- ⚡ **Fast Hybrid Search**: Powered by Typesense vector + keyword search
-- 📊 **34,000+ Products**: Direct access via Neon PostgreSQL database (no API limits!)
-- 🏷️ **Advanced Filtering**: Price, brand, size, color, stock, temporal queries
-- 🎨 **Rich Product Attributes**: Brand, size, color, physical form, sale prices
-- 💰 **Cost Optimized**: Uses `text-embedding-3-small` for affordable semantic search
-- 🔒 **Conservative Classification**: Returns null for ambiguous queries (no false positives)
+- 🚀 **Single-Call Architecture**: Typesense NL + Railway middleware in one API call
+- 🤖 **RAG Category Classification**: Middleware handles intelligent context-aware classification
+- 🔍 **Model Number Search**: Handles SKU variations ("tnr700s" → "TNR 700S")
+- 📚 **Synonym Matching**: 35 synonym groups (pipette/pipettor, nitrile/nbr, etc.)
+- 🧠 **Semantic Understanding**: OpenAI embeddings for query intent
+- 🎯 **Smart Query Translation**: Automatic filter extraction (price, stock, temporal)
+- ⚡ **Fast Hybrid Search**: Typesense vector + keyword search
+- 📊 **34,000+ Products**: Direct access via Neon PostgreSQL database
+- 🏷️ **Advanced Filtering**: Price, stock, brand, size, color, sale prices
+- 🎨 **Rich Product Attributes**: Brand, size, color, physical form, CAS numbers
+- 💰 **Cost Optimized**: Uses `text-embedding-3-small` for embeddings
+- 🔒 **Conservative Classification**: High-confidence category detection only
 
 ## Architecture
 
-### RAG Dual LLM Flow
+### Typesense NL + Middleware Architecture
 
-The system uses a **two-stage AI processing approach** for superior search accuracy:
+The system uses **single-call architecture** with Railway middleware for RAG-based category classification:
 
 ```mermaid
 flowchart TB
     A["👤 User Query<br/>nitrile gloves, powder-free, in stock, under $30"]
-    B["🤖 LLM Call 1: Query Translation<br/>Extracts: price, stock, brand, size, color"]
-    C["🔍 Retrieval Search<br/>20 products using Semantic + Keyword Search"]
-    D["🤖 LLM Call 2: RAG Category Classification<br/>Analyzes context<br/>Detects: Products/Gloves & Apparel/Gloves<br/>Confidence: 0.85"]
-    E["🎯 Final Search<br/>Combined filters: categories + price + stock"]
-    F["✨ Results<br/>3 relevant products"]
+    B["🌐 FastAPI Backend<br/>(/api/search)"]
+    C["🔍 Typesense NL Search<br/>nl_query=true, nl_model_id='middleware-rag-vllm'"]
+    D["🤖 Railway Middleware<br/>RAG Processing<br/>https://web-production-a5d93.up.railway.app"]
+    E["📦 Retrieves 20 Products<br/>Using normalized fields"]
+    F["🧠 GPT-4o-mini Classification<br/>Context-aware category detection"]
+    G["📤 Returns Search Params<br/>{q: 'nitrile glove powder-free', filter_by: 'categories:=Gloves && stock_status:=IN_STOCK && price:<30'}"]
+    H["🎯 Typesense Executes Search<br/>With middleware parameters"]
+    I["✨ Results<br/>3 nitrile gloves, powder-free, in stock, under $30"]
 
     A --> B
     B --> C
     C --> D
     D --> E
     E --> F
+    F --> G
+    G --> H
+    H --> I
 
     style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
-    style B fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
+    style B fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#000
     style C fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000
-    style D fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
-    style E fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
-    style F fill:#b2ebf2,stroke:#0097a7,stroke-width:3px,color:#000
+    style D fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
+    style E fill:#f5f5f5,stroke:#616161,stroke-width:2px,color:#000
+    style F fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
+    style G fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
+    style H fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style I fill:#b2ebf2,stroke:#0097a7,stroke-width:3px,color:#000
 ```
 
-**Full Documentation**: See [`docs/RAG_DUAL_LLM_APPROACH.md`](docs/RAG_DUAL_LLM_APPROACH.md)
+**Full Documentation**: See [`docs/FEATURE_STATUS.md`](docs/FEATURE_STATUS.md) for implementation details.
 
-### Why RAG Dual LLM?
+### Why Typesense NL + Middleware?
 
-1. **Two-Stage Intelligence**:
-   - **Stage 1**: NL model extracts filters (price, stock, attributes)
-   - **Stage 2**: RAG analyzes retrieved products for category detection
+1. **Single-Call Architecture**:
+   - **One API call**: Typesense handles middleware communication internally
+   - **Railway middleware**: OpenAI-compatible endpoint for RAG processing
+   - **Automatic integration**: Typesense NL calls middleware, executes search, returns results
 
-2. **Context-Aware Classification**:
-   - LLM sees actual product context before deciding category
-   - Handles exact matches and semantic queries correctly
+2. **Context-Aware RAG Classification**:
+   - Retrieves 20 products as context (using normalized fields for model number search)
+   - GPT-4o-mini analyzes product context for category detection
    - Conservative on ambiguous queries (returns null when uncertain)
-
-3. **Superior Accuracy**:
    - **84.6% accuracy** on test dataset
-   - Improved handling of edge cases vs. single LLM approach
-   - Transparent reasoning (debug mode shows LLM's decision process)
+
+3. **Model Number Search**:
+   - Normalized fields (`sku_normalized`, `name_normalized`) handle SKU variations
+   - "tnr700s" → finds "TNR 700S" products
+   - "blu touch" → finds "BluTouch" products
+   - 100:4 weighting ratio prioritizes original fields while supporting edge cases
 
 4. **Hybrid Search Foundation**:
-   - **Semantic Search**: Finds products by meaning (embeddings)
+   - **Semantic Search**: Finds products by meaning (OpenAI embeddings)
    - **Keyword Search**: Finds exact matches (SKUs, brands)
-   - **Combined Ranking**: Best of both worlds
+   - **Synonym Matching**: 35 synonym groups (pipette/pipettor, nitrile/nbr, etc.)
+   - **Combined Ranking**: Best of all approaches
 
 ## Prerequisites
 
@@ -370,42 +386,75 @@ The system understands natural language and extracts:
 
 ## How It Works
 
-### 1. Query Translation (GPT-4)
+### 1. Single-Call Architecture (Typesense NL)
 
-User query is sent to GPT-4 which extracts:
-- Search terms (`q`)
-- Filters (`filter_by`): price ranges, stock status, categories
-- Sorting (`sort_by`)
+User query goes through a **single API call** with automatic middleware integration:
+
+1. **FastAPI Backend** receives query → calls Typesense with `nl_query=true`
+2. **Typesense NL** automatically calls Railway middleware for processing
+3. **Railway Middleware** performs RAG-based category classification
+4. **Typesense** executes search with middleware parameters and returns results
 
 Example:
 ```
 Input: "gloves under $50"
-Output: {
-  "q": "gloves",
-  "filter_by": "price:[0..50]",
-  "sort_by": "price:asc"
-}
+
+Typesense → Middleware:
+  Middleware retrieves 20 products as context
+  GPT-4o-mini analyzes context and extracts:
+    - q: "gloves"
+    - filter_by: "categories:=Gloves && price:<50"
+
+Middleware → Typesense:
+  Returns search parameters
+
+Typesense → API:
+  Executes search and returns results
 ```
 
-### 2. Hybrid Search (Typesense)
+### 2. Middleware RAG Processing
 
-The structured query is executed with:
+**a) Product Retrieval** (context gathering)
+- Retrieves 20 relevant products using normalized fields
+- Groups products by category
+- Samples products per category for context
+
+**b) Category Classification** (GPT-4o-mini)
+- Analyzes product context
+- Detects relevant category with confidence score
+- Conservative approach (returns null when uncertain)
+
+**c) Filter Extraction**
+- Price ranges, stock status, special prices (reliable fields)
+- Temporal sorting (latest, newest)
+- **Conservative filtering**: Attributes (color, size, brand) use semantic matching (not strict filters)
+
+### 3. Hybrid Search (Typesense)
+
+The middleware parameters are executed with:
 
 **a) Semantic Search** (vector embeddings)
-- Generates embedding for query using `text-embedding-3-small`
-- Searches against product embeddings (generated from: name, description, categories)
+- Uses `text-embedding-3-small` for query and product embeddings
+- Embeddings generated from: name, description, categories, brand
 - Finds semantically similar products
 
 **b) Keyword Search**
-- Traditional text search across fields
-- Fuzzy matching, typo tolerance
+- Traditional text search with fuzzy matching
+- Typo tolerance and prefix matching
+- Model number search using normalized fields
 
-**c) Filtering & Ranking**
-- Applies price/stock/category filters
-- Ranks results by relevance (semantic + keyword scores)
-- Returns top matches
+**c) Synonym Matching**
+- 35 synonym groups expand queries automatically
+- Materials: PTFE ⟷ Teflon, Nitrile ⟷ NBR
+- Equipment: Pipette ⟷ Pipettor
+- Measurements: ml ⟷ milliliter
 
-### 3. Why text-embedding-3-small?
+**d) Filtering & Ranking**
+- Applies middleware-extracted filters
+- Ranks by relevance (semantic + keyword + category scores)
+- Returns top matches with metadata
+
+### 4. Why text-embedding-3-small?
 
 | Model | Cost per 1M tokens | Use Case | Speed |
 |-------|-------------------|----------|-------|
@@ -438,17 +487,22 @@ mercedes-natural-language-search/
 │       ├── export_collection.py
 │       ├── export_nl_system_prompt.py
 │       └── setup_synonyms.py
+├── middleware/
+│   └── openai_middleware.py            # Railway middleware (RAG processing)
 ├── docs/
-│   ├── RAG_DUAL_LLM_APPROACH.md              # RAG implementation guide
+│   ├── FEATURE_STATUS.md                     # Current implementation status
+│   ├── MODEL_NUMBER_SEARCH_FIX.md            # Model number search documentation
 │   ├── CATEGORY_CLASSIFICATION_APPROACHES.md # Technical comparison
 │   └── SYNONYM_TESTING_GUIDE.md              # Synonym testing documentation
 ├── tests/
 │   ├── test_category_classification.py  # RAG test suite (26 cases)
 │   ├── category_test_cases.py           # Test dataset
 │   ├── test_synonyms.py                 # Comprehensive synonym testing
+│   ├── test_model_number_search.py      # Model number search tests
 │   ├── EVALUATION_RESULTS_FINAL.md      # RAG evaluation results
-│   ├── EVALUATION_RESULTS.md            # Initial evaluation
-│   └── FINAL_SUMMARY.md                 # Implementation summary
+│   └── EVALUATION_RESULTS.md            # Initial evaluation
+├── scripts/
+│   └── tests/                           # Test shell scripts
 ├── database/                  # Exported product data
 ├── frontend-next/            # Next.js frontend
 │   ├── app/
@@ -465,12 +519,13 @@ mercedes-natural-language-search/
 ## Technologies
 
 - **Backend**: Python 3.9+, FastAPI
-- **Search Engine**: Typesense (vector + keyword search)
+- **Search Engine**: Typesense (vector + keyword search + NL)
+- **Middleware**: Railway-deployed OpenAI-compatible RAG service
 - **AI/ML**:
-  - OpenAI GPT-4 (query translation)
+  - OpenAI GPT-4o-mini (middleware RAG processing)
   - OpenAI text-embedding-3-small (semantic embeddings)
-- **Data Source**: Mercedes Scientific GraphQL API
-- **Frontend**: React, Vite, Tailwind CSS
+- **Data Source**: Neon PostgreSQL (34k+ products)
+- **Frontend**: Next.js, React, Tailwind CSS
 - **Data Models**: Pydantic v2
 
 ## Troubleshooting
