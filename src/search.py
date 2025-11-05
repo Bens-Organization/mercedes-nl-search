@@ -168,23 +168,34 @@ class Search:
         # Calculate query time
         query_time_ms = (time.time() - start_time) * 1000
 
-        # Transform results
-        products = self._transform_results(result.get('hits', []))
+        # Get raw hits
+        hits = result.get('hits', [])
         total_found = result.get('found', 0)
 
-        # Detect size pattern and filter results if exact matches exist
+        # Detect size pattern and filter BEFORE transforming to Product objects
         size_pattern = self._detect_size_pattern(query)
         size_filtered = False
         if size_pattern:
             width, height = size_pattern
             print(f"[Size Filter] Detected size pattern: {width}x{height}")
-            original_count = len(products)
-            products = self._filter_by_size(products, width, height)
-            if len(products) < original_count:
+            original_count = len(hits)
+
+            # Filter hits based on size
+            matching_hits = []
+            for hit in hits:
+                doc = hit['document']
+                if self._product_matches_size(doc, width, height):
+                    matching_hits.append(hit)
+
+            if len(matching_hits) > 0:
+                hits = matching_hits
                 size_filtered = True
-                print(f"[Size Filter] Filtered from {original_count} to {len(products)} products (exact size matches only)")
+                print(f"[Size Filter] Filtered from {original_count} to {len(hits)} products (exact size matches only)")
             else:
                 print(f"[Size Filter] No exact matches found, showing all {original_count} results (fallback)")
+
+        # Transform filtered results to Product objects
+        products = self._transform_results(hits)
 
         # Build response metadata
         typesense_query = {
