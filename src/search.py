@@ -16,10 +16,11 @@ How it works:
 """
 
 import typesense
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 from config import Config
 from models import SearchResponse, Product
 import time
+import re
 
 
 class Search:
@@ -37,6 +38,79 @@ class Search:
             'connection_timeout_seconds': 30  # Longer timeout for NL queries
         })
         self.collection_name = Config.TYPESENSE_COLLECTION_NAME
+
+    def _detect_size_pattern(self, query: str) -> Optional[Tuple[str, str]]:
+        """
+        Detect size pattern in query (e.g., "22x22", "24 x 60").
+
+        Returns:
+            Tuple of (width, height) if size detected, None otherwise
+        """
+        # Pattern: NNxNN or NN x NN (with optional mm/cm)
+        pattern = r'\b(\d{1,3})\s*[xX×]\s*(\d{1,3})\s*(mm|cm)?\b'
+        match = re.search(pattern, query)
+        if match:
+            return (match.group(1), match.group(2))
+        return None
+
+    def _product_matches_size(self, product: Dict[str, Any], width: str, height: str) -> bool:
+        """
+        Check if product matches the detected size.
+
+        Checks in: size field, name, and short_description
+        Handles formats: "22x22", "22 x 22", "22x22mm", "22 x 22mm"
+        """
+        # Generate all possible size format variations
+        size_variations = [
+            f"{width}x{height}",
+            f"{width} x {height}",
+            f"{width}x{height}mm",
+            f"{width} x {height}mm",
+        ]
+
+        # Check size field
+        product_size = product.get('size', '')
+        if product_size:
+            for variation in size_variations:
+                if variation.lower() in product_size.lower():
+                    return True
+
+        # Check name
+        product_name = product.get('name', '')
+        if product_name:
+            for variation in size_variations:
+                if variation.lower() in product_name.lower():
+                    return True
+
+        # Check short_description
+        product_desc = product.get('short_description', '')
+        if product_desc:
+            for variation in size_variations:
+                if variation.lower() in product_desc.lower():
+                    return True
+
+        return False
+
+    def _filter_by_size(self, products: List[Product], width: str, height: str) -> List[Product]:
+        """
+        Filter products to only those matching the detected size.
+
+        Only filters if exact matches exist - otherwise returns all (fallback behavior).
+        """
+        # Convert Product objects to dicts for checking
+        matching_products = []
+        for product in products:
+            # Check if product matches size
+            product_dict = product.model_dump() if hasattr(product, 'model_dump') else product.__dict__
+            if self._product_matches_size(product_dict, width, height):
+                matching_products.append(product)
+
+        # Only return filtered results if we found exact matches
+        # Otherwise return all (user might be searching for non-existent size)
+        if len(matching_products) > 0:
+            return matching_products
+        else:
+            return products  # Fallback: show all results if no exact matches
 
     async def search(
         self,
@@ -98,6 +172,20 @@ class Search:
         products = self._transform_results(result.get('hits', []))
         total_found = result.get('found', 0)
 
+        # Detect size pattern and filter results if exact matches exist
+        size_pattern = self._detect_size_pattern(query)
+        size_filtered = False
+        if size_pattern:
+            width, height = size_pattern
+            print(f"[Size Filter] Detected size pattern: {width}x{height}")
+            original_count = len(products)
+            products = self._filter_by_size(products, width, height)
+            if len(products) < original_count:
+                size_filtered = True
+                print(f"[Size Filter] Filtered from {original_count} to {len(products)} products (exact size matches only)")
+            else:
+                print(f"[Size Filter] No exact matches found, showing all {original_count} results (fallback)")
+
         # Build response metadata
         typesense_query = {
             "approach": "typesense_nl",
@@ -105,8 +193,14 @@ class Search:
             "nl_model_id": "middleware-rag-vllm",
             "middleware_url": "https://web-production-a5d93.up.railway.app",
             "results_found": total_found,
-            "results_returned": len(products),
+            "results_returned": len(products),  # Updated count after size filtering
         }
+
+        # Add size filtering info if applied
+        if size_pattern:
+            width, height = size_pattern
+            typesense_query["size_detected"] = f"{width}x{height}"
+            typesense_query["size_filtered"] = size_filtered
 
         # Always include middleware-extracted parameters (not just in debug mode)
         if "request_params" in result:
