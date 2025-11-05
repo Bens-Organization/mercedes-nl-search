@@ -60,12 +60,12 @@ class Search:
         # Typesense NL search parameters
         search_params = {
             "q": query,
-            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
-            "query_by_weights": "100,100,4,4,3,3,1",
+            "query_by": "name,sku,size,name_normalized,sku_normalized,description,short_description,categories",
+            "query_by_weights": "100,100,150,4,4,3,3,1",  # Boost size field (150) for exact matches
             "per_page": max_results,
             "nl_query": True,  # Enable natural language processing
             "nl_model_id": "middleware-rag-vllm",  # Use our vLLM middleware model
-            "prefix": "true,true,true,true,false,false,false",
+            "prefix": "true,true,false,true,true,false,false,false",  # Disable prefix for size (exact match)
             "num_typos": 2,
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
