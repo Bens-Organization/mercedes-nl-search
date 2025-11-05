@@ -25,6 +25,9 @@ pydantic>=2.10.0
 # PostgreSQL (for Neon database)
 psycopg2-binary>=2.9.9
 
+# MySQL (for Magento database)
+mysql-connector-python>=8.0.33
+
 # Development
 black>=24.1.1
 pytest>=7.4.4
