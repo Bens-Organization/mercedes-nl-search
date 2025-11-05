@@ -178,6 +178,7 @@ class Search:
         # Get raw hits
         hits = result.get('hits', [])
         total_found = result.get('found', 0)
+        original_total_found = total_found  # Store original count for metadata
 
         # Filter by size if pattern was detected (size_pattern set earlier)
         size_filtered = False
@@ -206,6 +207,12 @@ class Search:
         # Transform filtered results to Product objects
         products = self._transform_results(hits)
 
+        # Update total_found to reflect filtered count when size filtering is applied
+        # This ensures the UI shows "Found 4 results" instead of "Found 63 results"
+        if size_filtered:
+            total_found = len(products)
+            print(f"[Size Filter] Updated total from Typesense count to filtered count: {total_found}")
+
         # Build response metadata
         typesense_query = {
             "approach": "typesense_nl",
@@ -221,6 +228,9 @@ class Search:
             width, height = size_pattern
             typesense_query["size_detected"] = f"{width}x{height}"
             typesense_query["size_filtered"] = size_filtered
+            if size_filtered:
+                # Include original Typesense count for debugging
+                typesense_query["typesense_total_found"] = original_total_found
 
         # Always include middleware-extracted parameters (not just in debug mode)
         if "request_params" in result:
