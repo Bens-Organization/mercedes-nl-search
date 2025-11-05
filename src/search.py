@@ -131,12 +131,19 @@ class Search:
         """
         start_time = time.time()
 
+        # Detect size pattern early to adjust search parameters
+        size_pattern = self._detect_size_pattern(query)
+
+        # If size pattern detected, fetch more results from Typesense to ensure we get all matches
+        # before filtering (since "22x22" vs "22 x 22" may rank differently)
+        fetch_results = 100 if size_pattern else max_results
+
         # Typesense NL search parameters
         search_params = {
             "q": query,
             "query_by": "name,sku,size,name_normalized,sku_normalized,description,short_description,categories",
             "query_by_weights": "100,100,150,4,4,3,3,1",  # Boost size field (150) for exact matches
-            "per_page": max_results,
+            "per_page": fetch_results,  # Fetch more if size pattern detected
             "nl_query": True,  # Enable natural language processing
             "nl_model_id": "middleware-rag-vllm",  # Use our vLLM middleware model
             "prefix": "true,true,false,true,true,false,false,false",  # Disable prefix for size (exact match)
@@ -172,8 +179,7 @@ class Search:
         hits = result.get('hits', [])
         total_found = result.get('found', 0)
 
-        # Detect size pattern and filter BEFORE transforming to Product objects
-        size_pattern = self._detect_size_pattern(query)
+        # Filter by size if pattern was detected (size_pattern set earlier)
         size_filtered = False
         if size_pattern:
             width, height = size_pattern
@@ -193,6 +199,9 @@ class Search:
                 print(f"[Size Filter] Filtered from {original_count} to {len(hits)} products (exact size matches only)")
             else:
                 print(f"[Size Filter] No exact matches found, showing all {original_count} results (fallback)")
+
+        # Limit to max_results after filtering
+        hits = hits[:max_results]
 
         # Transform filtered results to Product objects
         products = self._transform_results(hits)
