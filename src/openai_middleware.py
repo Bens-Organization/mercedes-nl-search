@@ -493,9 +493,19 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             print(f"[MODE] Decoupled architecture mode - keeping metadata for API layer")
             print(f"[RAG] NOTE: Category filter will be applied by API layer based on confidence")
 
+        # Always prepend brand_priority to sort_by (in-house brands first: Mercedes=100, Tanner=90, Others=50)
+        llm_sort = params.get("sort_by", "").strip()
+        if llm_sort:
+            # User has specific sorting preference (price, temporal, etc.)
+            # In-house brands still appear first, then apply their requested sort
+            params["sort_by"] = f"brand_priority:desc,{llm_sort}"
+        else:
+            # Default: brand priority first, then relevance, then price
+            params["sort_by"] = "brand_priority:desc,_text_match:desc,price:asc"
+
+        print(f"[BRAND PRIORITY] Applied sort_by: {params['sort_by']}")
+
         # Remove empty string fields (Typesense prefers omitted fields over empty strings)
-        if params.get("sort_by") == "":
-            params.pop("sort_by", None)
         if params.get("filter_by") == "":
             params.pop("filter_by", None)
 
