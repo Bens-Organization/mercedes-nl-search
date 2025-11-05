@@ -150,7 +150,7 @@ class Search:
             "num_typos": 2,
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
-            "sort_by": "brand_priority:desc,_text_match:desc,price:asc",  # In-house brands first (Mercedes=100, Tanner=90, Others=50)
+            # NOTE: sort_by removed from here - middleware handles it (brand_priority logic deployed there)
         }
 
         # Add debug mode if enabled
