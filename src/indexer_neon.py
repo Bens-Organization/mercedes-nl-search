@@ -163,6 +163,7 @@ class NeonProductIndexer:
                     FROM catalog_products
                     WHERE (store_view_code IS NULL OR store_view_code = 'mercedesscientific')
                       AND is_in_stock = '1'
+                      AND product_online = '1'  -- Exclude sample/hidden products (product_online=2)
                       AND sku IS NOT NULL
                     GROUP BY sku
                 )
@@ -192,6 +193,7 @@ class NeonProductIndexer:
 
             print(f"Fetching products from Neon database...")
             print(f"Strategy: Merging store_view_code NULL + 'mercedesscientific'")
+            print(f"Filters: is_in_stock=1, product_online=1 (excludes SAM/sample products)")
             if limit:
                 print(f"Limit: {limit:,} products")
             else:
