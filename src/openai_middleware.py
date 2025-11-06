@@ -381,7 +381,7 @@ Note: Always use "" for empty strings, never use placeholder text like "field:di
     ]
 
 
-async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", use_cache: bool = True) -> Dict[str, Any]:
+async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", use_cache: bool = True, cache_key: str = None) -> Dict[str, Any]:
     """
     Call the real OpenAI API with enriched messages.
 
@@ -389,6 +389,7 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", u
         messages: Chat messages to send to OpenAI
         model: Model to use
         use_cache: Whether to use caching (default: True)
+        cache_key: Optional explicit cache key (original user query). If not provided, extracts from messages.
 
     Returns:
         OpenAI API response (from cache or fresh API call)
@@ -398,21 +399,20 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", u
         model = model.replace("openai/", "")
 
     # Try cache first (if enabled)
-    cache_key = None
     if use_cache:
         try:
             cache = get_cache()
 
-            # Create cache key from user message content (last user message)
-            user_message = None
-            for msg in reversed(messages):
-                if msg.role == "user":
-                    user_message = msg.content
-                    break
+            # Use explicit cache key if provided, otherwise extract from messages
+            if not cache_key:
+                # Fallback: extract from user message content (last user message)
+                # NOTE: This may include RAG context if called after enrichment
+                for msg in reversed(messages):
+                    if msg.role == "user":
+                        cache_key = msg.content
+                        break
 
-            if user_message:
-                cache_key = user_message
-
+            if cache_key:
                 # Try to get from cache
                 cached_response = await cache.get_cached_response(cache_key)
                 if cached_response:
@@ -660,7 +660,8 @@ async def chat_completions(request: ChatCompletionRequest):
         )
 
         # 5. Call real OpenAI API (filter extraction + category classification)
-        openai_response = await call_openai(enriched_messages, model=request.model)
+        # Use original user_query as cache key (NOT enriched message with RAG context)
+        openai_response = await call_openai(enriched_messages, model=request.model, cache_key=user_query)
 
         # 6. Apply category filter if LLM is confident
         # Determine mode based on whether context was provided:
