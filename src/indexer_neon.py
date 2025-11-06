@@ -162,8 +162,8 @@ class NeonProductIndexer:
                         MAX(is_in_stock) as is_in_stock
                     FROM catalog_products
                     WHERE (store_view_code IS NULL OR store_view_code = 'mercedesscientific')
-                      AND is_in_stock = '1'
                       AND sku IS NOT NULL
+                      AND product_online = '1'
                     GROUP BY sku
                 )
                 SELECT
@@ -420,8 +420,9 @@ class NeonProductIndexer:
 
             short_desc_clean = self._clean_html(short_description) if short_description else None
 
-            # Map stock status
-            stock_status = "IN_STOCK" if is_in_stock == '1' else "OUT_OF_STOCK"
+            # Map stock status based on actual quantity (not is_in_stock flag)
+            # qty > 0 means actually in stock, regardless of is_in_stock flag
+            stock_status = "IN_STOCK" if (qty and float(qty) > 0) else "OUT_OF_STOCK"
 
             # Build image URL
             image_url = None
