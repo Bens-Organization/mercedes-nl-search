@@ -601,12 +601,14 @@ Output: {"q": "pipettes", "filter_by": "brand:=Thermo Fisher"}"
 OPENAI_MODEL=gpt-4o-mini  # ~75% cost reduction
 ```
 
-**Option 2**: Cache frequent queries (Redis)
+**Option 2**: ✅ **Semantic query caching (IMPLEMENTED)**
 ```python
-# Before calling OpenAI, check cache
-if query in cache:
-    return cache[query]
+# Redis LangCache SDK with cache-first architecture
+# Cache hit: ~1.1s (skips RAG + OpenAI)
+# Cache miss: ~4-5s (RAG + OpenAI + cache store)
+# Result: 3-4x faster on cache hits, 40-60% cost reduction
 ```
+See `docs/REDIS_CACHE_IMPLEMENTATION.md` for full details.
 
 **Option 3**: Batch similar queries
 - Group queries by intent
@@ -791,7 +793,7 @@ SERVER_PORT=5001           # Port for FastAPI server
 ## Future Enhancements
 
 ### Short Term
-- [ ] Add caching layer (Redis)
+- [x] ✅ **Add caching layer** (Redis LangCache SDK - implemented with 3-4x speedup, see `docs/REDIS_CACHE_IMPLEMENTATION.md`)
 - [ ] Implement rate limiting
 - [ ] Add query analytics
 - [ ] Support pagination

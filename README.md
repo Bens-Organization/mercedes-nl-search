@@ -662,7 +662,7 @@ OPENAI_MODEL=gpt-4
 
 1. **Index incrementally**: For large catalogs, index in batches
 2. **Use CDN for images**: Cache product images
-3. **Cache frequent queries**: Add Redis for repeated searches
+3. **✅ LLM caching implemented**: Redis LangCache for semantic query caching (3-4x faster on cache hits) - See `docs/REDIS_CACHE_IMPLEMENTATION.md`
 4. **Pagination**: Use `per_page` parameter wisely
 5. **Monitoring**: Track query times and adjust k parameter
 
