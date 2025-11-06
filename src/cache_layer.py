@@ -35,6 +35,10 @@ from datetime import datetime, timedelta
 import httpx
 import redis.asyncio as redis
 from openai import AsyncOpenAI
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -103,8 +107,8 @@ class CacheLayer:
     - disabled: No caching (passthrough)
     """
 
-    def __init__(self, mode: str = "auto"):
-        self.mode = mode if mode else CACHE_MODE
+    def __init__(self, mode: Optional[str] = None):
+        self.mode = mode if mode is not None else CACHE_MODE
         self.metrics = CacheMetrics()
         self.redis_client: Optional[redis.Redis] = None
         self.openai_client: Optional[AsyncOpenAI] = None
