@@ -278,10 +278,15 @@ class CacheLayer:
             # Run SDK call in thread pool (SDK is sync, we're async)
             result = await asyncio.to_thread(_search_sync)
 
-            # SDK returns result with entries if found
-            if result and hasattr(result, 'entries') and result.entries:
-                # Return first matching entry's response
-                return result.entries[0].response
+            # SDK returns SearchResponse with 'data' attribute containing list of CacheEntry objects
+            if result and hasattr(result, 'data') and result.data:
+                # Response is stored as JSON string, parse it back to dict
+                response_str = result.data[0].response
+
+                # If response is a string, parse it as JSON
+                if isinstance(response_str, str):
+                    return json.loads(response_str)
+                return response_str
 
             return None
 
