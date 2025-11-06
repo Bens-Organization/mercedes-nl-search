@@ -69,6 +69,7 @@ class Search:
             "num_typos": 2,
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
+            "sort_by": "in_stock_priority:desc,_text_match:desc",  # Prioritize in-stock products
         }
 
         # Add debug mode if enabled
