@@ -614,11 +614,13 @@ async def chat_completions(request: ChatCompletionRequest):
 
     This is the main endpoint that Typesense will call.
     It encapsulates the entire RAG workflow:
-    1. Retrieve relevant products (RAG context)
-    2. Enrich prompt with product context
-    3. Call OpenAI for filter extraction + category classification
-    4. Apply category filter if confident (>= 0.75)
-    5. Return search parameters to Typesense
+    1. Check cache first (early exit if HIT)
+    2. Retrieve relevant products (RAG context) - only on cache MISS
+    3. Enrich prompt with product context
+    4. Call OpenAI for filter extraction + category classification
+    5. Apply category filter if confident (>= 0.75)
+    6. Cache the response
+    7. Return search parameters to Typesense
     """
     try:
         # ENTRY POINT LOGGING: Prove Typesense is calling us
@@ -637,10 +639,44 @@ async def chat_completions(request: ChatCompletionRequest):
         # 1. Extract user query from messages
         user_query = extract_query_from_messages(request.messages)
 
-        # 2. Extract schema info from system message
+        # 2. CHECK CACHE FIRST (before RAG retrieval)
+        try:
+            cache = get_cache()
+            cached_response = await cache.get_cached_response(user_query)
+
+            if cached_response:
+                # CACHE HIT - return immediately without RAG/OpenAI
+                print(f"[CACHE] ✅ HIT - returning cached response (skipped RAG retrieval)", flush=True)
+
+                # Log cached response content for visibility
+                if cached_response.get("choices"):
+                    cached_content = cached_response["choices"][0]["message"]["content"]
+                    content_preview = cached_content[:200] if len(cached_content) > 200 else cached_content
+                    print(f"[CACHE] Cached response: {content_preview}...", flush=True)
+
+                # Apply category filter to cached response (for consistent formatting)
+                for_typesense_nl = request.context is None
+                cached_response = apply_category_filter(cached_response, for_typesense_nl=for_typesense_nl)
+
+                # EXIT LOGGING
+                response_body = json.dumps(cached_response)
+                print(f"\n[RESPONSE] Status: 200 OK (from cache)", flush=True)
+                print(f"[RESPONSE] Content length: {len(response_body)} bytes", flush=True)
+                print(f"{'='*80}\n", flush=True)
+                sys.stdout.flush()
+
+                return cached_response
+
+            # CACHE MISS - proceed with RAG
+            print(f"[CACHE] ❌ MISS - proceeding with RAG retrieval + OpenAI", flush=True)
+
+        except Exception as e:
+            print(f"[CACHE] Cache check error (proceeding without cache): {e}", flush=True)
+
+        # 3. Extract schema info from system message
         schema_info = extract_schema_info(request.messages)
 
-        # 3. Get product context (RAG)
+        # 4. Get product context (RAG) - only executed on cache MISS
         # Decoupled Architecture: Accept context from request (no Typesense calls in middleware)
         if request.context is not None:
             # Context provided by caller (e.g., staging API) - use it directly
@@ -652,18 +688,26 @@ async def chat_completions(request: ChatCompletionRequest):
             products = await retrieve_products(user_query, limit=20)
             print(f"[RAG] Retrieved products from Typesense: {len(products)} products", flush=True)
 
-        # 4. Build enriched prompt with product context
+        # 5. Build enriched prompt with product context
         enriched_messages = build_enriched_prompt(
             user_query,
             products,
             schema_info.get("system_prompt", "")
         )
 
-        # 5. Call real OpenAI API (filter extraction + category classification)
-        # Use original user_query as cache key (NOT enriched message with RAG context)
-        openai_response = await call_openai(enriched_messages, model=request.model, cache_key=user_query)
+        # 6. Call real OpenAI API (filter extraction + category classification)
+        # Disable caching in call_openai since we handle it here
+        openai_response = await call_openai(enriched_messages, model=request.model, use_cache=False)
 
-        # 6. Apply category filter if LLM is confident
+        # 7. Cache the response for future queries
+        try:
+            cache = get_cache()
+            await cache.cache_response(user_query, openai_response)
+            print(f"[CACHE] Response cached for future queries", flush=True)
+        except Exception as e:
+            print(f"[CACHE] Caching error (response still returned): {e}", flush=True)
+
+        # 8. Apply category filter if LLM is confident
         # Determine mode based on whether context was provided:
         # - context provided (decoupled) → keep metadata for API layer
         # - no context (Typesense NL) → remove metadata for compatibility
@@ -671,7 +715,7 @@ async def chat_completions(request: ChatCompletionRequest):
         print(f"[MODE] {'Typesense NL integration' if for_typesense_nl else 'Decoupled architecture'} (context={'not provided' if for_typesense_nl else 'provided'})")
         openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl)
 
-        # 7. EXIT LOGGING: Show exact response being sent to Typesense
+        # 9. EXIT LOGGING: Show exact response being sent to Typesense
         response_body = json.dumps(openai_response)
         content_preview = openai_response["choices"][0]["message"]["content"][:200] if openai_response.get("choices") else "N/A"
         print(f"\n[RESPONSE] Status: 200 OK", flush=True)
@@ -680,7 +724,7 @@ async def chat_completions(request: ChatCompletionRequest):
         print(f"{'='*80}\n", flush=True)
         sys.stdout.flush()
 
-        # 8. Return in OpenAI format (Typesense expects this)
+        # 10. Return in OpenAI format (Typesense expects this)
         return openai_response
 
     except ValueError as e:
