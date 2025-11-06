@@ -180,6 +180,10 @@ class SynonymManager:
                 "synonyms": ["slide", "microscope slide", "glass slide", "specimen slide"]
             },
             {
+                "id": "adhesive-slide",
+                "synonyms": ["charged slide", "plus slide", "adhesive slide", "coated slide"]
+            },
+            {
                 "id": "swab-applicator",
                 "synonyms": ["swab", "applicator", "cotton swab", "specimen swab"]
             },
