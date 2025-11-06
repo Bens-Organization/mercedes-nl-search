@@ -32,7 +32,6 @@ import time
 import hashlib
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
-import httpx
 import redis.asyncio as redis
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
@@ -46,8 +45,9 @@ REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL", "3600"))  # 1 hour default
 CACHE_SIMILARITY_THRESHOLD = float(os.getenv("CACHE_SIMILARITY_THRESHOLD", "0.95"))
 CACHE_MODE = os.getenv("CACHE_MODE", "auto")  # auto, langcache, diy, disabled
 
-# Redis LangCache API (when available)
+# Redis LangCache SDK (when available)
 LANGCACHE_API_URL = os.getenv("LANGCACHE_API_URL", "")
+LANGCACHE_CACHE_ID = os.getenv("LANGCACHE_CACHE_ID", "")
 LANGCACHE_API_KEY = os.getenv("LANGCACHE_API_KEY", "")
 
 # OpenAI for embeddings (DIY mode)
@@ -156,14 +156,14 @@ class CacheLayer:
                     if self.mode == "diy":
                         raise ValueError("DIY mode requires OPENAI_API_KEY for embeddings")
 
-            # Check LangCache API availability (if in langcache or auto mode)
+            # Check LangCache SDK availability (if in langcache or auto mode)
             if self.mode in ["auto", "langcache"]:
-                if LANGCACHE_API_URL and LANGCACHE_API_KEY:
-                    print(f"[CACHE] LangCache API configured: {LANGCACHE_API_URL}")
+                if LANGCACHE_API_URL and LANGCACHE_CACHE_ID and LANGCACHE_API_KEY:
+                    print(f"[CACHE] LangCache SDK configured: {LANGCACHE_API_URL}")
                 else:
-                    print("[CACHE] LangCache API not configured")
+                    print("[CACHE] LangCache SDK not configured")
                     if self.mode == "langcache":
-                        raise ValueError("LangCache mode requires LANGCACHE_API_URL and LANGCACHE_API_KEY")
+                        raise ValueError("LangCache mode requires LANGCACHE_API_URL, LANGCACHE_CACHE_ID, and LANGCACHE_API_KEY")
 
             self._initialized = True
             print(f"[CACHE] Initialization complete (mode: {self.mode})")
@@ -193,19 +193,19 @@ class CacheLayer:
         start_time = time.time()
 
         try:
-            # Try LangCache API first (if available)
-            if self.mode in ["auto", "langcache"] and LANGCACHE_API_URL and LANGCACHE_API_KEY:
+            # Try LangCache SDK first (if available)
+            if self.mode in ["auto", "langcache"] and LANGCACHE_API_URL and LANGCACHE_CACHE_ID and LANGCACHE_API_KEY:
                 cached = await self._get_from_langcache(query)
                 if cached:
                     latency_ms = (time.time() - start_time) * 1000
                     self.metrics.record_hit(latency_ms)
-                    print(f"[CACHE] ✅ HIT (LangCache API) - {latency_ms:.1f}ms")
+                    print(f"[CACHE] ✅ HIT (LangCache SDK) - {latency_ms:.1f}ms")
                     return cached
                 elif self.mode == "langcache":
                     # LangCache mode only - don't fallback
                     latency_ms = (time.time() - start_time) * 1000
                     self.metrics.record_miss(latency_ms)
-                    print(f"[CACHE] ❌ MISS (LangCache API) - {latency_ms:.1f}ms")
+                    print(f"[CACHE] ❌ MISS (LangCache SDK) - {latency_ms:.1f}ms")
                     return None
 
             # Try DIY Redis cache
@@ -247,8 +247,8 @@ class CacheLayer:
             return
 
         try:
-            # Cache in LangCache API (if available)
-            if self.mode in ["auto", "langcache"] and LANGCACHE_API_URL and LANGCACHE_API_KEY:
+            # Cache in LangCache SDK (if available)
+            if self.mode in ["auto", "langcache"] and LANGCACHE_API_URL and LANGCACHE_CACHE_ID and LANGCACHE_API_KEY:
                 await self._cache_in_langcache(query, response)
 
             # Cache in DIY Redis (if available)
@@ -260,48 +260,67 @@ class CacheLayer:
             self.metrics.record_error()
 
     async def _get_from_langcache(self, query: str) -> Optional[Dict[str, Any]]:
-        """Get cached response from Redis LangCache REST API"""
+        """Get cached response from Redis LangCache using official SDK"""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(
-                    f"{LANGCACHE_API_URL}/v1/cache/get",
-                    headers={
-                        "Authorization": f"Bearer {LANGCACHE_API_KEY}",
-                        "Content-Type": "application/json"
-                    },
-                    json={"query": query}
-                )
+            import asyncio
+            from langcache import LangCache
 
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("cached"):
-                        return data.get("response")
+            def _search_sync():
+                """Synchronous search using SDK"""
+                with LangCache(
+                    server_url=LANGCACHE_API_URL,
+                    cache_id=LANGCACHE_CACHE_ID,
+                    api_key=LANGCACHE_API_KEY
+                ) as lang_cache:
+                    result = lang_cache.search(prompt=query)
+                    return result
+
+            # Run SDK call in thread pool (SDK is sync, we're async)
+            result = await asyncio.to_thread(_search_sync)
+
+            # SDK returns result with entries if found
+            if result and hasattr(result, 'entries') and result.entries:
+                # Return first matching entry's response
+                return result.entries[0].response
 
             return None
 
         except Exception as e:
-            print(f"[CACHE] LangCache API error: {e}")
+            print(f"[CACHE] LangCache SDK search error: {e}")
             return None
 
     async def _cache_in_langcache(self, query: str, response: Dict[str, Any]):
-        """Cache response in Redis LangCache REST API"""
+        """Cache response in Redis LangCache using official SDK"""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    f"{LANGCACHE_API_URL}/v1/cache/set",
-                    headers={
-                        "Authorization": f"Bearer {LANGCACHE_API_KEY}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "query": query,
-                        "response": response,
-                        "ttl": REDIS_CACHE_TTL
-                    }
-                )
-            print(f"[CACHE] Cached in LangCache API")
+            import asyncio
+            from langcache import LangCache
+
+            def _set_sync():
+                """Synchronous set using SDK"""
+                with LangCache(
+                    server_url=LANGCACHE_API_URL,
+                    cache_id=LANGCACHE_CACHE_ID,
+                    api_key=LANGCACHE_API_KEY
+                ) as lang_cache:
+                    # Convert response dict to JSON string for storage
+                    response_str = json.dumps(response)
+
+                    # SDK set() takes prompt and response
+                    # ttlMillis is optional (None = no expiration)
+                    ttl_ms = REDIS_CACHE_TTL * 1000 if REDIS_CACHE_TTL > 0 else None
+                    result = lang_cache.set(
+                        prompt=query,
+                        response=response_str,
+                        ttl_millis=ttl_ms
+                    )
+                    return result
+
+            # Run SDK call in thread pool
+            await asyncio.to_thread(_set_sync)
+            print(f"[CACHE] Cached in LangCache SDK")
+
         except Exception as e:
-            print(f"[CACHE] LangCache API caching error: {e}")
+            print(f"[CACHE] LangCache SDK caching error: {e}")
 
     async def _get_embedding(self, text: str) -> List[float]:
         """Generate embedding for semantic matching"""

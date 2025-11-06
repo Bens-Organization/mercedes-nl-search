@@ -28,6 +28,7 @@ psycopg2-binary>=2.9.9
 # Redis (for LLM caching)
 redis>=5.0.0
 hiredis>=2.2.3  # Fast C parser for Redis protocol
+langcache>=0.1.0  # Official Redis LangCache SDK
 
 # Development
 black>=24.1.1
