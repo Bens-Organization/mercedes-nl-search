@@ -60,6 +60,7 @@ class NeonProductIndexer:
                 },
                 {"name": "url_key", "type": "string"},
                 {"name": "stock_status", "type": "string", "facet": True},
+                {"name": "in_stock_priority", "type": "int32", "sort": True},  # 1=in stock, 0=out of stock (for sorting)
                 {"name": "product_type", "type": "string", "facet": True},
                 {"name": "description", "type": "string", "optional": True},
                 {"name": "short_description", "type": "string", "optional": True},
@@ -162,9 +163,8 @@ class NeonProductIndexer:
                         MAX(is_in_stock) as is_in_stock
                     FROM catalog_products
                     WHERE (store_view_code IS NULL OR store_view_code = 'mercedesscientific')
-                      AND is_in_stock = '1'
-                      AND product_online = '1'  -- Exclude sample/hidden products (product_online=2)
                       AND sku IS NOT NULL
+                      AND product_online = '1'
                     GROUP BY sku
                 )
                 SELECT
@@ -422,8 +422,11 @@ class NeonProductIndexer:
 
             short_desc_clean = self._clean_html(short_description) if short_description else None
 
-            # Map stock status
-            stock_status = "IN_STOCK" if is_in_stock == '1' else "OUT_OF_STOCK"
+            # Map stock status based on actual quantity (not is_in_stock flag)
+            # qty > 0 means actually in stock, regardless of is_in_stock flag
+            stock_status = "IN_STOCK" if (qty and float(qty) > 0) else "OUT_OF_STOCK"
+            # Priority for sorting: in-stock products appear first
+            in_stock_priority = 1 if stock_status == "IN_STOCK" else 0
 
             # Build image URL
             image_url = None
@@ -461,6 +464,7 @@ class NeonProductIndexer:
                 "name_normalized": self._normalize_name(name),  # Split camelCase + keep spaces for tokens
                 "url_key": url_key or "",
                 "stock_status": stock_status,
+                "in_stock_priority": in_stock_priority,
                 "product_type": product_type or "simple",
                 "description": description_clean,
                 "short_description": short_desc_clean,

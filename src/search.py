@@ -150,7 +150,7 @@ class Search:
             "num_typos": 2,
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
-            # NOTE: sort_by removed from here - middleware handles it (brand_priority logic deployed there)
+            # Note: sort_by is handled by middleware to avoid conflicts
         }
 
         # Add debug mode if enabled
