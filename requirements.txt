@@ -25,6 +25,10 @@ pydantic>=2.10.0
 # PostgreSQL (for Neon database)
 psycopg2-binary>=2.9.9
 
+# Redis (for LLM caching)
+redis>=5.0.0
+hiredis>=2.2.3  # Fast C parser for Redis protocol
+
 # Development
 black>=24.1.1
 pytest>=7.4.4

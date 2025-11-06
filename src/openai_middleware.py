@@ -40,6 +40,7 @@ from datetime import datetime
 
 from src.config import Config
 import typesense
+from src.cache_layer import get_cache
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -380,14 +381,49 @@ Note: Always use "" for empty strings, never use placeholder text like "field:di
     ]
 
 
-async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini") -> Dict[str, Any]:
+async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", use_cache: bool = True) -> Dict[str, Any]:
     """
     Call the real OpenAI API with enriched messages.
+
+    Args:
+        messages: Chat messages to send to OpenAI
+        model: Model to use
+        use_cache: Whether to use caching (default: True)
+
+    Returns:
+        OpenAI API response (from cache or fresh API call)
     """
     # Strip "openai/" prefix if present (Typesense sends "openai/gpt-4o-mini")
     if model.startswith("openai/"):
         model = model.replace("openai/", "")
 
+    # Try cache first (if enabled)
+    cache_key = None
+    if use_cache:
+        try:
+            cache = get_cache()
+
+            # Create cache key from user message content (last user message)
+            user_message = None
+            for msg in reversed(messages):
+                if msg.role == "user":
+                    user_message = msg.content
+                    break
+
+            if user_message:
+                cache_key = user_message
+
+                # Try to get from cache
+                cached_response = await cache.get_cached_response(cache_key)
+                if cached_response:
+                    print(f"[CACHE] ✅ Cache hit for OpenAI call")
+                    return cached_response
+
+                print(f"[CACHE] ❌ Cache miss - calling OpenAI API")
+        except Exception as e:
+            print(f"[CACHE] Cache check error (proceeding without cache): {e}")
+
+    # Cache miss or caching disabled - call OpenAI
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
@@ -409,7 +445,18 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini") -
                 detail=f"OpenAI API error: {response.text}"
             )
 
-        return response.json()
+        openai_response = response.json()
+
+    # Cache the response (if caching enabled)
+    if use_cache and cache_key:
+        try:
+            cache = get_cache()
+            await cache.cache_response(cache_key, openai_response)
+            print(f"[CACHE] Response cached for future queries")
+        except Exception as e:
+            print(f"[CACHE] Caching error (response still returned): {e}")
+
+    return openai_response
 
 
 def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75, for_typesense_nl: bool = True) -> Dict[str, Any]:
@@ -542,9 +589,20 @@ async def health():
     except Exception as e:
         typesense_status = f"error: {str(e)}"
 
+    # Check cache status
+    cache_status = "unknown"
+    try:
+        cache = get_cache()
+        if not cache._initialized:
+            await cache.initialize()
+        cache_status = cache.mode
+    except Exception as e:
+        cache_status = f"error: {str(e)}"
+
     return {
         "status": "healthy",
         "typesense": typesense_status,
+        "cache": cache_status,
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -633,10 +691,18 @@ async def chat_completions(request: ChatCompletionRequest):
 
 @app.get("/stats")
 async def stats():
-    """Service statistics"""
+    """Service statistics including cache performance"""
     try:
         # Get collection stats
         collection_info = typesense_client.collections['mercedes_products'].retrieve()
+
+        # Get cache stats
+        cache_stats = {}
+        try:
+            cache = get_cache()
+            cache_stats = cache.metrics.get_stats()
+        except Exception as e:
+            cache_stats = {"error": str(e)}
 
         return {
             "collection": {
@@ -648,7 +714,8 @@ async def stats():
                 "version": "1.0.0",
                 "model": "gpt-4o-mini",
                 "retrieval_limit": 20
-            }
+            },
+            "cache": cache_stats
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching stats: {str(e)}")
