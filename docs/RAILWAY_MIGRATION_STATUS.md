@@ -30,11 +30,11 @@
 - Environment variable configuration
 - Troubleshooting section
 
-## Current Issue ⚠️
+## Issue IDENTIFIED & FIXED ✅
 
-### Middleware 404 Error
+### Middleware 404 Error - ROOT CAUSE FOUND
 
-**Problem**: Middleware is returning 404 for `/v1/chat/completions` endpoint
+**Problem**: Middleware service at `https://web-production-a5d93.up.railway.app` was returning 404 for `/v1/chat/completions`
 
 **Evidence from logs** (`scratch/logs/`):
 ```
@@ -42,19 +42,39 @@
 [backend] 'error': 'Error generating search parameters: Failed to get response from OpenAI: 404'
 ```
 
-**Impact**:
-- Search still works (Typesense falls back to original query)
-- BUT: No filter extraction or category detection
-- Response shows empty filters: `"filters_applied": ""`
+**Root Cause IDENTIFIED**:
+When we renamed `railway.toml` → `railway.middleware.toml`:
+1. Railway stopped using the config file
+2. Railway auto-detected `Dockerfile` (the NEW backend Dockerfile)
+3. The middleware service redeployed with **backend code** instead of **middleware code**
+4. Backend doesn't have `/v1/chat/completions` endpoint → 404 error
 
-**Root Cause**:
-The middleware at `https://web-production-a5d93.up.railway.app` doesn't have the `/v1/chat/completions` endpoint, or the endpoint path is different.
+**Evidence**:
+```bash
+$ curl https://web-production-a5d93.up.railway.app/
+{
+    "message": "Mercedes Scientific Natural Language Search API",  # ← WRONG (backend)
+    "version": "3.0.0"
+}
 
-**Likely Fix**:
-Check `middleware/openai_middleware.py` or `src/openai_middleware.py` to verify:
-1. The endpoint route is correctly defined
-2. The middleware is properly deployed
-3. The URL in Typesense NL model config is correct
+# Should return:
+{
+    "service": "OpenAI-Compatible Middleware for Typesense",  # ← CORRECT (middleware)
+    "status": "running"
+}
+```
+
+**Fix Applied** ✅:
+- Restored `railway.toml` pointing to `Dockerfile.middleware`
+- This ensures middleware service uses correct Dockerfile
+- Added documentation for multi-service Railway setup
+- After pushing, middleware service will auto-redeploy with correct code
+
+**Impact After Fix**:
+- ✅ Middleware will have `/v1/chat/completions` endpoint
+- ✅ RAG-based category classification will work
+- ✅ Filter extraction will resume
+- ✅ Search will return enriched results with filters
 
 ## How Search Currently Works
 
