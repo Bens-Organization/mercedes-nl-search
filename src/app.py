@@ -22,17 +22,15 @@ app = FastAPI(
 )
 
 # CORS Configuration
+# Note: Wildcards require allow_origin_regex, not allow_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # Local Next.js dev
         "http://localhost:5173",  # Local Vite dev
-        "https://*.vercel.app",   # Vercel deployments
-        "https://*.netlify.app",  # Netlify deployments
-        "https://mercedes-nl-search.vercel.app",
-        "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app",
-        "https://mercedes-nl-search-staging.up.railway.app"
+        "https://mercedes-nl-search.vercel.app",  # Production frontend
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",  # All Vercel preview deployments
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
