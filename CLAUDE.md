@@ -12,10 +12,14 @@ This file provides context for AI assistants (like Claude) working on this codeb
 
 **Stack**:
 - **Frontend**: Vercel (https://mercedes-nl-search.vercel.app)
-- **Backend API**: Render (https://mercedes-search-api.onrender.com)
+- **Backend API (Production)**: Railway (https://mercedes-nl-search-production.up.railway.app)
+- **Backend API (Staging)**: Railway (https://mercedes-nl-search-staging.up.railway.app)
+- **Middleware**: Railway (https://web-production-a5d93.up.railway.app)
 - **Search Engine**: Typesense Cloud (8GB cluster)
 - **Database**: Neon PostgreSQL (free tier)
 - **AI Services**: OpenAI (GPT-4o-mini + text-embedding-3-small)
+
+**Why Railway?** Backend migrated from Render to eliminate 30-50 second cold start delays caused by free tier inactivity timeout (services spin down after 15 minutes). Railway provides faster cold starts (~5-10 seconds) and better resource allocation.
 
 **Infrastructure**:
 - 34,607 products indexed with semantic embeddings
