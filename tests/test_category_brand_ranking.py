@@ -88,12 +88,12 @@ def test_brand_ranking():
         print(f"{'=' * 80}\n")
 
         try:
-            # Search with sort by brand_priority
+            # Search with sort by stock_status, then brand_priority
             result = client.collections['mercedes_products'].documents.search({
                 'q': test_case['query'],
                 'query_by': test_case['query_by'],
                 'filter_by': test_case['filter_by'] if test_case['filter_by'] else None,
-                'sort_by': 'brand_priority:desc,_text_match:desc,price:asc',
+                'sort_by': 'stock_status:asc,brand_priority:desc,_text_match:desc,price:asc',
                 'per_page': test_case['per_page']
             })
 

@@ -493,9 +493,20 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             print(f"[MODE] Decoupled architecture mode - keeping metadata for API layer")
             print(f"[RAG] NOTE: Category filter will be applied by API layer based on confidence")
 
-        # Remove empty string fields (Typesense prefers omitted fields over empty strings)
-        if params.get("sort_by") == "":
-            params.pop("sort_by", None)
+        # Apply default stock-aware brand priority sorting if no sort specified
+        if params.get("sort_by") == "" or not params.get("sort_by"):
+            # Default sort: in-stock first, then brand priority, then relevance, then price
+            # Note: "IN_STOCK" < "OUT_OF_STOCK" alphabetically, so asc puts IN_STOCK first
+            params["sort_by"] = "stock_status:asc,brand_priority:desc,_text_match:desc,price:asc"
+            print(f"[SORT] Applied default stock-aware brand priority sorting")
+        else:
+            # User has specific sort (price:asc, created_at:desc, etc.)
+            # Prepend stock and brand priority to maintain stock-aware ranking
+            user_sort = params["sort_by"]
+            params["sort_by"] = f"stock_status:asc,brand_priority:desc,{user_sort}"
+            print(f"[SORT] Prepended stock+brand priority to user sort: {params['sort_by']}")
+
+        # Remove empty filter_by (Typesense prefers omitted fields over empty strings)
         if params.get("filter_by") == "":
             params.pop("filter_by", None)
 

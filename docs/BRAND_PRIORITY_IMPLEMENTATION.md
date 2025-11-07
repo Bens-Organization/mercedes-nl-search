@@ -279,22 +279,56 @@ def _calculate_brand_priority(self, sku: str, brand: str, product_name: str, cat
 brand_priority = self._calculate_brand_priority(sku, specs.get('brand'), name, category_list)
 ```
 
-### File 2: `src/search.py` (Search Logic)
+### File 2: `src/openai_middleware.py` (Middleware Logic)
 
-#### Updated Search Sort (Lines 605-614)
+#### Stock-Aware Sort Order (Lines 496-511)
+
+The middleware applies stock-aware brand priority sorting automatically:
 
 ```python
-# Always prioritize brands first (category-aware), then apply other sorting
-nl_sort = parsed_params.get("sort_by", "")
-
-if nl_sort:
-    # User has specific sorting preference (price, temporal, etc.)
-    # Brand priority still appears first, then apply their requested sort
-    sort_by = f"brand_priority:desc,{nl_sort}"
+# Apply default stock-aware brand priority sorting if no sort specified
+if params.get("sort_by") == "" or not params.get("sort_by"):
+    # Default sort: in-stock first, then brand priority, then relevance, then price
+    # Note: "IN_STOCK" < "OUT_OF_STOCK" alphabetically, so asc puts IN_STOCK first
+    params["sort_by"] = "stock_status:asc,brand_priority:desc,_text_match:desc,price:asc"
 else:
-    # Default: brand priority first, then relevance, then price
-    sort_by = "brand_priority:desc,_text_match:desc,price:asc"
+    # User has specific sort (price:asc, created_at:desc, etc.)
+    # Prepend stock and brand priority to maintain stock-aware ranking
+    user_sort = params["sort_by"]
+    params["sort_by"] = f"stock_status:asc,brand_priority:desc,{user_sort}"
 ```
+
+**Sort Order Priority:**
+1. **Stock Status** (`stock_status:asc`) - In-stock products first
+   - `IN_STOCK` appears before `OUT_OF_STOCK` alphabetically
+   - Within in-stock: sorted by brand priority
+   - Within out-of-stock: sorted by brand priority
+2. **Brand Priority** (`brand_priority:desc`) - Category-specific brand ranking
+3. **User-specified sort** (if any) - e.g., price:asc, created_at:desc
+4. **Relevance** (`_text_match:desc`) - Search relevance score (default)
+5. **Price** (`price:asc`) - Lowest price first (default)
+
+**Example Result Order:**
+
+*Query: "HPLC methanol" (no sort specified)*
+```
+1. IN_STOCK  | Priority 100 | Mercedes HPLC Methanol
+2. IN_STOCK  | Priority 90  | Birch HPLC Methanol
+3. IN_STOCK  | Priority 50  | VWR HPLC Methanol
+4. OUT_OF_STOCK | Priority 100 | Mercedes HPLC Methanol
+5. OUT_OF_STOCK | Priority 90  | Birch HPLC Methanol
+```
+
+*Query: "cheapest HPLC methanol" (user requests price sort)*
+```
+1. IN_STOCK  | Priority 100 | Mercedes HPLC Methanol | $25
+2. IN_STOCK  | Priority 90  | Birch HPLC Methanol | $30
+3. IN_STOCK  | Priority 50  | VWR HPLC Methanol | $35
+4. OUT_OF_STOCK | Priority 100 | Mercedes HPLC Methanol | $20
+5. OUT_OF_STOCK | Priority 90  | Birch HPLC Methanol | $28
+```
+
+**Note:** The middleware (not src/search.py) handles sort_by to ensure stock and brand priority are always applied, even when users request specific sorting.
 
 ## Testing
 

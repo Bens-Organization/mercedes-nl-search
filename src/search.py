@@ -69,6 +69,7 @@ class Search:
             "num_typos": 2,
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
+            # Note: sort_by is handled by middleware (returns stock-aware brand priority sorting)
         }
 
         # Add debug mode if enabled
