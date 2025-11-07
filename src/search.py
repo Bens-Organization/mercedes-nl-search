@@ -234,10 +234,17 @@ class Search:
                 typesense_query["typesense_total_found"] = original_total_found
 
         # Always include middleware-extracted parameters (not just in debug mode)
-        if "request_params" in result:
-            typesense_query["extracted_query"] = result.get("request_params", {}).get("q")
-            typesense_query["filters_applied"] = result.get("request_params", {}).get("filter_by", "")
-            typesense_query["sort_applied"] = result.get("request_params", {}).get("sort_by")
+        # Read from parsed_nl_query.augmented_params (contains middleware-processed params)
+        if "parsed_nl_query" in result and "augmented_params" in result["parsed_nl_query"]:
+            augmented = result["parsed_nl_query"]["augmented_params"]
+            typesense_query["extracted_query"] = augmented.get("q", query)
+            typesense_query["filters_applied"] = augmented.get("filter_by", "")
+            typesense_query["sort_applied"] = augmented.get("sort_by")
+        else:
+            # Fallback to original query if middleware didn't process it
+            typesense_query["extracted_query"] = query
+            typesense_query["filters_applied"] = ""
+            typesense_query["sort_applied"] = None
 
         # Include additional debug info if requested
         if debug and "parsed_nl_query" in result:
