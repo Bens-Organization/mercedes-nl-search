@@ -30,7 +30,8 @@ app.add_middleware(
         "https://*.vercel.app",   # Vercel deployments
         "https://*.netlify.app",  # Netlify deployments
         "https://mercedes-nl-search.vercel.app",
-        "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app"
+        "https://mercedes-nl-search-git-staging-alvin-jbbgis-projects.vercel.app",
+        "https://mercedes-nl-search-staging.up.railway.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
