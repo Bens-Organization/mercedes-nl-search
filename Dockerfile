@@ -20,6 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code
 COPY src/ ./src/
 
+# Set Python path so relative imports work
+ENV PYTHONPATH=/app/src
+
 # Expose port (Railway will use PORT environment variable)
 EXPOSE 8000
 
