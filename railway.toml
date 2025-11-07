@@ -1,0 +1,26 @@
+# Railway Configuration for OpenAI Middleware Service
+#
+# IMPORTANT: This is the DEFAULT configuration for services in this repo.
+# It's configured for the MIDDLEWARE service.
+#
+# If you have multiple services (middleware + backend):
+# - Middleware service: Uses this file (Dockerfile.middleware)
+# - Backend service: Override in Railway UI Settings → Build → Dockerfile Path = "Dockerfile"
+#
+# Service Identification:
+# - Middleware: https://web-production-a5d93.up.railway.app
+# - Backend: Configure in Railway UI to use different Dockerfile
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.middleware"
+
+[deploy]
+# Start command is defined in Dockerfile.middleware CMD
+# Do NOT override here - let Dockerfile handle it for proper variable expansion
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "always"
+
+# Resource limits (Railway free tier: 512MB RAM, 0.5 vCPU)
+# Can be adjusted in Railway dashboard if needed
