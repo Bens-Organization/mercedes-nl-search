@@ -1,0 +1,56 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+venv
+.venv
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+.pytest_cache
+htmlcov
+.coverage
+.tox
+
+# Frontend
+frontend-next
+node_modules
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Database exports
+database
+
+# Tests
+tests
+scripts/tests
+
+# Utilities (not needed for runtime)
+src/indexer.py
+src/indexer_neon.py
+src/utilities
+middleware
+
+# Git
+.git
+.gitignore
