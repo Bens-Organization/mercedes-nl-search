@@ -150,28 +150,22 @@ curl -X POST https://mercedes-nl-search-staging.up.railway.app/api/search \
    git push origin feature/railway-backend-migration
    ```
 
-2. **⚠️  CRITICAL: Override Backend Dockerfile in Railway UI**
+2. **✅ Railway Auto-Deploys (No Manual Steps Required!)**
 
-   **Why**: `railway.toml` is repository-level and affects ALL services. It points to `Dockerfile.middleware`, which will break the backend service.
+   **How it works**:
+   - `railway.toml` now uses **environment-specific configuration**
+   - **Middleware environment** automatically uses `Dockerfile.middleware`
+   - **Staging environment** automatically uses `Dockerfile`
+   - No manual UI overrides needed!
 
-   **Steps**:
-   - Go to Railway Dashboard → **Backend Service** (staging environment)
-   - Click **Settings** → **Build** section
-   - Find **"Dockerfile Path"**
-   - Click **"Override"** or **"Edit"**
-   - Set value to: `Dockerfile` (not Dockerfile.middleware)
-   - Click **"Save"**
-   - **Redeploy** the backend service
+   **Configuration Structure**:
+   ```toml
+   [environments.middleware.build]
+   dockerfilePath = "Dockerfile.middleware"  # For middleware service
 
-   **Without this override**:
-   - ❌ Backend will use `Dockerfile.middleware` (WRONG!)
-   - ❌ Backend will fail with import errors
-   - ❌ Backend will serve middleware code
-
-   **With this override**:
-   - ✅ Middleware uses `railway.toml` → `Dockerfile.middleware`
-   - ✅ Backend uses UI override → `Dockerfile`
-   - ✅ Both services work correctly
+   [environments.staging.build]
+   dockerfilePath = "Dockerfile"             # For backend service
+   ```
 
 3. **Railway Auto-Deploys**:
    - Middleware service (`web-production-a5d93`) sees `railway.toml` change
@@ -198,25 +192,25 @@ curl -X POST https://mercedes-nl-search-staging.up.railway.app/api/search \
 
 ## Multi-Service Railway Configuration
 
-Since you have **TWO services** in one Railway project:
+Since you have **TWO services** in one Railway project, we use **environment-specific configuration**:
 
 ### Middleware Service
 - **URL**: `https://web-production-a5d93.up.railway.app`
 - **Environment**: `middleware`
-- **Uses**: `railway.toml` (Dockerfile.middleware)
+- **Dockerfile**: `Dockerfile.middleware` (configured in railway.toml)
 - **Purpose**: RAG processing for Typesense
 
 ### Backend Service (NEW)
 - **URL**: `https://mercedes-nl-search-staging.up.railway.app`
 - **Environment**: `staging`
-- **Dockerfile**: Must override in Railway UI
+- **Dockerfile**: `Dockerfile` (configured in railway.toml)
 - **Purpose**: FastAPI REST API
 
-**To configure backend service**:
-1. Go to Railway dashboard → `staging` environment
-2. Click backend service → **Settings** → **Build**
-3. Under **Dockerfile Path**, set: `Dockerfile` (not Dockerfile.middleware)
-4. **Save** and redeploy
+**How it works**:
+- `railway.toml` uses `[environments.<name>]` sections
+- Each environment specifies its own Dockerfile path
+- Railway automatically uses the correct Dockerfile based on environment
+- **No manual UI configuration needed!**
 
 ## Environment Variables
 
