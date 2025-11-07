@@ -12,7 +12,8 @@ This file provides context for AI assistants (like Claude) working on this codeb
 
 **Stack**:
 - **Frontend**: Vercel (https://mercedes-nl-search.vercel.app)
-- **Backend API**: Railway (https://mercedes-nl-search-staging.up.railway.app)
+- **Backend API (Production)**: Railway (https://mercedes-nl-search-production.up.railway.app)
+- **Backend API (Staging)**: Railway (https://mercedes-nl-search-staging.up.railway.app)
 - **Middleware**: Railway (https://web-production-a5d93.up.railway.app)
 - **Search Engine**: Typesense Cloud (8GB cluster)
 - **Database**: Neon PostgreSQL (free tier)

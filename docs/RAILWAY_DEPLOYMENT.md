@@ -2,11 +2,18 @@
 
 **Date**: 2025-11-07
 **Status**: ✅ Production Ready
-**Backend URL**: https://mercedes-nl-search-staging.up.railway.app
+
+**Backend URLs**:
+- **Production**: https://mercedes-nl-search-production.up.railway.app
+- **Staging**: https://mercedes-nl-search-staging.up.railway.app
 
 ## Overview
 
 This guide covers the Railway deployment of the FastAPI backend. The backend was migrated from Render to Railway to eliminate the **30-50 second cold start delays** caused by Render's free tier inactivity timeout (services spin down after 15 minutes of inactivity).
+
+**Two Environments**:
+- **Production**: Connected to production Typesense and serves the live frontend
+- **Staging**: Used for testing changes before production deployment
 
 ### Architecture
 
@@ -20,7 +27,8 @@ This guide covers the Railway deployment of the FastAPI backend. The backend was
                   ↓
 ┌─────────────────────────────────────────────────────────┐
 │  Railway Backend (FastAPI)                              │
-│  https://mercedes-nl-search-staging.up.railway.app     │
+│  Production: mercedes-nl-search-production.up.railway  │
+│  Staging: mercedes-nl-search-staging.up.railway        │
 │  - Receives search request                              │
 │  - Calls Typesense with nl_query=true                  │
 └─────────────────┬───────────────────────────────────────┘
@@ -69,15 +77,21 @@ This guide covers the Railway deployment of the FastAPI backend. The backend was
 
 ## Multi-Service Configuration
 
-The project has **TWO services** in one Railway project:
+The project has **MULTIPLE services** in Railway:
 
-### 1. Backend Service
+### 1. Backend Service (Production)
+- **Environment**: `production`
+- **Dockerfile**: `Dockerfile`
+- **URL**: https://mercedes-nl-search-production.up.railway.app
+- **Purpose**: FastAPI REST API (Production)
+
+### 2. Backend Service (Staging)
 - **Environment**: `staging`
 - **Dockerfile**: `Dockerfile`
 - **URL**: https://mercedes-nl-search-staging.up.railway.app
-- **Purpose**: FastAPI REST API
+- **Purpose**: FastAPI REST API (Testing)
 
-### 2. Middleware Service
+### 3. Middleware Service
 - **Environment**: `middleware`
 - **Dockerfile**: `Dockerfile.middleware`
 - **URL**: https://web-production-a5d93.up.railway.app
@@ -95,12 +109,17 @@ dockerfilePath = "Dockerfile.middleware"
 # Staging environment → uses Dockerfile
 [environments.staging.build]
 dockerfilePath = "Dockerfile"
+
+# Production environment → uses Dockerfile
+[environments.production.build]
+dockerfilePath = "Dockerfile"
 ```
 
 **How it works**:
 - Railway reads the environment-specific config when deploying
 - No manual UI overrides needed
-- Both services automatically use the correct Dockerfiles
+- All services automatically use the correct Dockerfiles
+- Production and staging backends use the same Dockerfile but different environment variables
 
 ## Backend Configuration
 

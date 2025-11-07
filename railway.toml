@@ -2,7 +2,7 @@
 #
 # ✅ ENVIRONMENT-SPECIFIC CONFIGURATION
 #
-# This configuration supports TWO services in different environments:
+# This configuration supports MULTIPLE services in different environments:
 #
 # 1. Middleware Service (web):
 #    - Environment: middleware
@@ -10,16 +10,22 @@
 #    - URL: https://web-production-a5d93.up.railway.app
 #    - Purpose: OpenAI-compatible middleware for Typesense NL
 #
-# 2. Backend Service (mercedes-nl-search):
+# 2. Backend Service - Production (mercedes-nl-search):
+#    - Environment: production
+#    - Dockerfile: Dockerfile
+#    - URL: https://mercedes-nl-search-production.up.railway.app
+#    - Purpose: FastAPI REST API (Production)
+#
+# 3. Backend Service - Staging (mercedes-nl-search):
 #    - Environment: staging
 #    - Dockerfile: Dockerfile
 #    - URL: https://mercedes-nl-search-staging.up.railway.app
-#    - Purpose: FastAPI REST API
+#    - Purpose: FastAPI REST API (Testing)
 #
 # How it works:
 # - Railway reads environment-specific config based on which environment is deploying
 # - No manual UI overrides needed!
-# - Both services use correct Dockerfiles automatically
+# - All services use correct Dockerfiles automatically
 
 # Default build configuration
 [build]
@@ -41,6 +47,16 @@ restartPolicyType = "always"
 dockerfilePath = "Dockerfile"
 
 [environments.staging.deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "always"
+
+# Production (backend) environment configuration
+[environments.production]
+[environments.production.build]
+dockerfilePath = "Dockerfile"
+
+[environments.production.deploy]
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "always"

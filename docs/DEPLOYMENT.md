@@ -13,11 +13,16 @@ This project is deployed using:
 - **AI Services**: OpenAI (GPT-4o-mini + text-embedding-3-small)
 
 **Live URLs**:
-- Frontend: https://mercedes-nl-search.vercel.app
-- Backend: https://mercedes-nl-search-staging.up.railway.app
-- Middleware: https://web-production-a5d93.up.railway.app
+- **Frontend**: https://mercedes-nl-search.vercel.app
+- **Backend (Production)**: https://mercedes-nl-search-production.up.railway.app
+- **Backend (Staging)**: https://mercedes-nl-search-staging.up.railway.app
+- **Middleware**: https://web-production-a5d93.up.railway.app
 
 **Why Railway?** Backend migrated from Render to eliminate 30-50 second cold start delays caused by free tier inactivity timeout.
+
+**Environments**:
+- **Production**: Connected to production Typesense and Neon database
+- **Staging**: Used for testing before production deployment
 
 ---
 

@@ -6,8 +6,9 @@ AI-powered natural language search for Mercedes Scientific products using **Type
 
 **Status**: ✅ **LIVE (v2.3.0)**
 
-- **Frontend**: [https://mercedes-nl-search.vercel.app](https://mercedes-nl-search.vercel.app)
-- **Backend API**: [https://mercedes-nl-search-staging.up.railway.app](https://mercedes-nl-search-staging.up.railway.app) (Railway)
+- **Frontend**: [https://mercedes-nl-search.vercel.app](https://mercedes-nl-search.vercel.app) (Vercel)
+- **Backend API**: [https://mercedes-nl-search-production.up.railway.app](https://mercedes-nl-search-production.up.railway.app) (Railway)
+- **Backend API (Staging)**: [https://mercedes-nl-search-staging.up.railway.app](https://mercedes-nl-search-staging.up.railway.app) (Railway)
 - **Search Engine**: Typesense Cloud (8GB cluster)
 - **Middleware**: [https://web-production-a5d93.up.railway.app](https://web-production-a5d93.up.railway.app) (Railway)
 - **Database**: Neon PostgreSQL
