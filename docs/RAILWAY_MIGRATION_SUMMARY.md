@@ -150,19 +150,48 @@ curl -X POST https://mercedes-nl-search-staging.up.railway.app/api/search \
    git push origin feature/railway-backend-migration
    ```
 
-2. **Railway Auto-Deploys**:
+2. **⚠️  CRITICAL: Override Backend Dockerfile in Railway UI**
+
+   **Why**: `railway.toml` is repository-level and affects ALL services. It points to `Dockerfile.middleware`, which will break the backend service.
+
+   **Steps**:
+   - Go to Railway Dashboard → **Backend Service** (staging environment)
+   - Click **Settings** → **Build** section
+   - Find **"Dockerfile Path"**
+   - Click **"Override"** or **"Edit"**
+   - Set value to: `Dockerfile` (not Dockerfile.middleware)
+   - Click **"Save"**
+   - **Redeploy** the backend service
+
+   **Without this override**:
+   - ❌ Backend will use `Dockerfile.middleware` (WRONG!)
+   - ❌ Backend will fail with import errors
+   - ❌ Backend will serve middleware code
+
+   **With this override**:
+   - ✅ Middleware uses `railway.toml` → `Dockerfile.middleware`
+   - ✅ Backend uses UI override → `Dockerfile`
+   - ✅ Both services work correctly
+
+3. **Railway Auto-Deploys**:
    - Middleware service (`web-production-a5d93`) sees `railway.toml` change
    - Automatically triggers redeploy with `Dockerfile.middleware`
    - Takes ~2-3 minutes to build and deploy
 
-3. **Verify Middleware Fix**:
+4. **Verify Middleware Fix**:
    ```bash
    # Wait 3 minutes, then test
    curl https://web-production-a5d93.up.railway.app/
    ```
    - Should see middleware response (not backend)
 
-4. **Test End-to-End**:
+5. **Verify Backend Still Works**:
+   ```bash
+   curl https://mercedes-nl-search-staging.up.railway.app/health
+   ```
+   - Should see backend health response
+
+6. **Test End-to-End**:
    - Open frontend: `https://mercedes-nl-search-git-staging.vercel.app`
    - Search: "nitrile gloves under $50"
    - Verify filters are extracted and applied
