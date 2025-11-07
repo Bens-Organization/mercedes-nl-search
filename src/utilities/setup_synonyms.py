@@ -195,6 +195,12 @@ class SynonymManager:
                 "id": "filter-filtration",
                 "synonyms": ["filter", "filtration", "membrane filter"]
             },
+
+            # Trademark Spelling Variations
+            {
+                "id": "parafin-paraffin",
+                "synonyms": ["parafin", "paraffin"]
+            },
         ]
 
     def setup_synonyms(self) -> None:
