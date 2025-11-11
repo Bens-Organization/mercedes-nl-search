@@ -116,7 +116,8 @@ class Search:
         self,
         query: str,
         max_results: int = 20,
-        debug: bool = False
+        debug: bool = False,
+        restriction_filter: str = ""
     ) -> SearchResponse:
         """
         Execute natural language search using Typesense NL integration.
@@ -125,6 +126,7 @@ class Search:
             query: User's natural language query
             max_results: Maximum number of results to return
             debug: Enable debug mode (shows NL processing details)
+            restriction_filter: Optional filter to exclude restricted items
 
         Returns:
             SearchResponse with products and metadata
@@ -152,6 +154,10 @@ class Search:
             "drop_tokens_threshold": 2,
             # Note: sort_by is handled by middleware to avoid conflicts
         }
+
+        # Apply restriction filter if provided
+        if restriction_filter:
+            search_params["filter_by"] = restriction_filter
 
         # Add debug mode if enabled
         if debug:
@@ -268,19 +274,19 @@ class Search:
 
             product = Product(
                 product_id=doc.get('product_id', ''),
-                uid=doc.get('uid', ''),
                 name=doc.get('name', ''),
                 sku=doc.get('sku', ''),
                 url_key=doc.get('url_key', ''),
                 stock_status=doc.get('stock_status', ''),
-                product_type=doc.get('type_id', ''),
+                product_type=doc.get('product_type', 'simple'),
                 description=doc.get('description'),
                 short_description=doc.get('short_description'),
                 price=doc.get('price'),
                 currency=doc.get('currency', 'USD'),
                 image_url=doc.get('image_url'),
                 categories=doc.get('categories', []),
-                category_ids=doc.get('category_ids', [])
+                brand=doc.get('brand'),
+                restricted_class=doc.get('restricted_class')
             )
 
             products.append(product)

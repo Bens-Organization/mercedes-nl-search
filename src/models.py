@@ -36,6 +36,9 @@ class Product(BaseModel):
     currency: str = "USD"
     image_url: Optional[str] = None
     categories: List[str] = Field(default_factory=list)
+    # Product attributes
+    brand: Optional[str] = None
+    restricted_class: Optional[str] = None  # For access control (ALT SOURCE = restricted)
 
 
 class SearchQuery(BaseModel):
