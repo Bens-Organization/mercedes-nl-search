@@ -552,15 +552,17 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             first_sort = sort_fields[0] if sort_fields else ""
 
             # Skip if it's already a priority field or _text_match (Typesense handles automatically)
-            if first_sort and first_sort not in ["in_stock_priority:desc", "brand_priority:desc", "_text_match:desc"]:
+            if first_sort and first_sort not in ["in_stock_priority:desc", "brand_priority:desc",
+                                                 "_text_match:desc"]:
                 params["sort_by"] = f"in_stock_priority:desc,brand_priority:desc,{first_sort}"
+                print(f"[SORT] Prepended stock+brand priority to user sort: {params['sort_by']}")
             else:
                 params["sort_by"] = "in_stock_priority:desc,brand_priority:desc"
+                print(f"[SORT] Applied default stock-aware brand priority sorting")
         else:
             # Default: in-stock priority, brand priority (Typesense handles relevance automatically)
             params["sort_by"] = "in_stock_priority:desc,brand_priority:desc"
-
-        print(f"[SORT] Applied sort_by: {params['sort_by']}")
+            print(f"[SORT] Applied default stock-aware brand priority sorting")
 
         # Remove empty string fields (Typesense prefers omitted fields over empty strings)
         if params.get("sort_by") == "":

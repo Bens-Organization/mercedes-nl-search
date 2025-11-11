@@ -2,30 +2,53 @@
 
 ## Overview
 
-This document describes the implementation of brand prioritization to ensure **in-house brands** (Mercedes Scientific and Tanner Scientific) always appear at the top of search results.
+This document describes the implementation of **category-specific brand prioritization** to ensure preferred brands appear at the top of search results based on product categories.
 
-## Business Requirement
+## Business Requirements
 
-> "A more important feature is that the in-house brands Tanner Scientific and Mercedes Scientific should always be in the top search results"
+### Jira Ticket: JAI-2165
 
-This is critical for the early prototype launch as it promotes the company's own products.
+Implement specific brand ranking order for product categories to prioritize preferred suppliers in search results.
+
+### Brand Ranking Rules
+
+#### 1. LCMS or HPLC Solvents
+
+**Brand Priority Order:**
+1. **Concord Technologies** (TBK prefix items) - FIRST
+2. **Birch Biotech** (BIR prefix) - SECOND
+3. **Mercedes Scientific** (MER prefix) - THIRD
+4. **Tanner Scientific** (TNR prefix) - FOURTH
+5. **Others** (Sigma, EMD, Fisher, VWR, etc.) - REMAINING
+
+#### 2. Drug Testing
+
+**Brand Priority Order:**
+1. **Mercedes Scientific** (MER prefix items) - FIRST
+2. **AllTest** (ALT prefix) - SECOND
+3. **Tanner Scientific** (TNR prefix) - THIRD
+4. **Healgen** (HGS prefix) - FOURTH
+5. **Wondfo** (WON prefix) - FIFTH
+6. **Others** - REMAINING
+
+#### 3. General (All Other Categories)
+
+**Brand Priority Order:**
+1. **Mercedes Scientific** - FIRST (in-house brand)
+2. **Tanner Scientific** - SECOND (in-house brand)
+3. **Others** - REMAINING
 
 ## Implementation Strategy
 
-### ✅ **Data-Level Approach** (ACTIVE - Requires Re-Indexing)
+### ✅ **Data-Level Approach** (ACTIVE)
 
 Brand prioritization is stored in the Typesense index and sorting happens at the database level:
 
-1. **During indexing**: Each product gets a `brand_priority` field calculated from product name + brand field
+1. **During indexing**: Each product gets a `brand_priority` field calculated from:
+   - Product category type (LCMS/HPLC, Drug Testing, or General)
+   - Brand detected from SKU prefix, brand field, or product name
 2. **During search**: Typesense sorts by `brand_priority:desc` natively
 3. **No post-processing**: Sorting happens in Typesense, not Python
-
-| Brand                | Priority Score | Description          |
-|----------------------|----------------|----------------------|
-| Mercedes Scientific  | 100            | In-house brand #1    |
-| Tanner Scientific    | 90             | In-house brand #2    |
-| Other brands         | 50             | Third-party brands   |
-| No brand             | 0              | Unbranded products   |
 
 **Benefits**:
 - ✅ **Cleaner code** - Sorting in Typesense, not Python
@@ -33,109 +56,380 @@ Brand prioritization is stored in the Typesense index and sorting happens at the
 - ✅ **Simpler logic** - Just set `sort_by` parameter
 - ✅ **Future-proof** - Scales better for large result sets
 - ✅ **Native database sorting** - Leverages Typesense's optimized sorting
+- ✅ **Category-aware** - Different brand priorities per category type
 
 **Trade-off**:
 - ⏳ Requires one-time re-indexing (35-45 minutes)
 
-## Code Changes
+## Priority Score Mapping
 
-### File 1: `src/indexer_neon.py` (Indexing Logic)
+| Category Type | Brand | Priority Score |
+|---------------|-------|----------------|
+| **LCMS/HPLC Solvents** | Concord Technologies | 100 |
+| | Birch Biotech | 90 |
+| | Mercedes Scientific | 80 |
+| | Tanner Scientific | 70 |
+| | Other brands | 50 |
+| | No brand | 0 |
+| **Drug Testing** | Mercedes Scientific | 100 |
+| | AllTest | 90 |
+| | Tanner Scientific | 80 |
+| | Healgen | 70 |
+| | Wondfo | 60 |
+| | Other brands | 50 |
+| | No brand | 0 |
+| **General** | Mercedes Scientific | 100 |
+| | Tanner Scientific | 90 |
+| | Other brands | 50 |
+| | No brand | 0 |
 
-#### Added Schema Field (Line 47)
+## Code Implementation
+
+### File: `src/indexer_neon.py`
+
+#### 1. Schema Field (Line 73)
+
 ```python
 {"name": "brand_priority", "type": "int32", "optional": True, "sort": True}
 ```
 
-#### Added Priority Calculation Method (Lines 213-245)
+#### 2. Category Type Detection (Lines 254-276)
+
 ```python
-def _calculate_brand_priority(self, brand: str, product_name: str = None) -> int:
+def _detect_category_type(self, categories: List[str]) -> str:
     """
-    Calculate brand priority for sorting.
-    Checks both brand field AND product name for brand detection.
-    This solves data quality issues where brand field is missing.
+    Detect the category type for brand ranking.
+
+    Returns:
+        - "lcms_hplc" for LCMS/HPLC Solvents
+        - "drug_testing" for Drug Testing products
+        - "general" for all other products
     """
-    brand_lower = (brand or "").lower().strip()
+    if not categories:
+        return "general"
+
+    # Check categories for LCMS/HPLC indicators
+    for cat in categories:
+        cat_lower = cat.lower()
+        # Check for LCMS/HPLC grade indicators
+        if any(grade in cat for grade in ["Grade: HPLC", "Grade: LCMS", "Grade: Ultra HPLC"]):
+            return "lcms_hplc"
+        # Check for Drug Testing category
+        if "drug test" in cat_lower:
+            return "drug_testing"
+
+    return "general"
+```
+
+**Category Detection Rules:**
+- **LCMS/HPLC**: Detected by `"Grade: HPLC"`, `"Grade: LCMS"`, or `"Grade: Ultra HPLC"` in categories
+  - Examples: `['Products/Chemicals & Stains/Water', 'Grade: HPLC']`, `['Clearance', 'Brand: Concord Technology', 'Grade: LCMS']`
+- **Drug Testing**: Detected by `"drug test"` (case-insensitive) in any category path
+  - Examples: `['Products/Drug Tests/Saliva']`, `['Products/Drug Tests/Cups']`, `['Products/Drug Tests/Validation']`
+- **General**: All other products
+
+#### 3. Brand Detection (Lines 278-343)
+
+```python
+def _detect_brand(self, sku: str, brand_field: str, product_name: str) -> str:
+    """
+    Detect brand from multiple sources.
+
+    Priority:
+    1. SKU prefix (most reliable)
+    2. Brand field
+    3. Product name
+
+    Returns:
+        Normalized brand name in lowercase, or None if no brand detected
+    """
+    sku_upper = (sku or "").upper().strip()
+    brand_lower = (brand_field or "").lower().strip()
     name_lower = (product_name or "").lower().strip()
 
-    # In-house brands (highest priority)
-    # Check both brand field and product name
-    if "mercedes scientific" in brand_lower or "mercedes scientific" in name_lower:
-        return 100
-    elif "tanner scientific" in brand_lower or "tanner scientific" in name_lower:
-        return 90
-    elif brand:  # Has brand field but not in-house
-        return 50
-    else:
+    # Check SKU prefix first (most reliable)
+    if sku_upper.startswith("TBK"):
+        return "concord technologies"
+    elif sku_upper.startswith("BIR"):
+        return "birch biotech"
+    elif sku_upper.startswith("MER"):
+        return "mercedes scientific"
+    elif sku_upper.startswith("ALT"):
+        return "alltest"
+    elif sku_upper.startswith("TNR"):
+        return "tanner scientific"
+    elif sku_upper.startswith("HGS"):
+        return "healgen"
+    elif sku_upper.startswith("WON"):
+        return "wondfo"
+
+    # Check brand field (good for most products)
+    # ... handles other brands like VWR, Sigma, Fisher, etc.
+
+    # Check product name (fallback)
+    # ... handles cases where brand field is missing
+
+    # Return original brand field if available
+    return brand_field if brand_field else None
+```
+
+**Brand Detection Priority:**
+1. **SKU Prefix** (Most Reliable)
+   - `TBK` → Concord Technologies
+   - `BIR` → Birch Biotech
+   - `MER` → Mercedes Scientific
+   - `ALT` → AllTest
+   - `TNR` → Tanner Scientific
+   - `HGS` → Healgen
+   - `WON` → Wondfo
+
+2. **Brand Field** (Good for Most Products)
+   - Checks for brand name in `additional_attributes`
+   - Handles VWR, Sigma-Aldrich, Fisher Scientific, etc.
+
+3. **Product Name** (Fallback)
+   - Checks for brand mention in product name
+   - Critical for data quality issues where brand field is missing
+
+#### 4. Brand Priority Calculation (Lines 345-429)
+
+```python
+def _calculate_brand_priority(self, sku: str, brand: str, product_name: str, categories: List[str]) -> int:
+    """
+    Calculate brand priority for sorting based on category and brand.
+
+    Priority structure varies by category:
+
+    **LCMS/HPLC Solvents** (detected by Grade: HPLC/LCMS in categories):
+        100 - Concord Technologies (TBK prefix)
+        90  - Birch Biotech (BIR prefix)
+        80  - Mercedes Scientific (MER prefix)
+        70  - Tanner Scientific (TNR prefix)
+        50  - Other brands
+        0   - No brand
+
+    **Drug Testing** (detected by "Drug Test" in categories):
+        100 - Mercedes Scientific (MER prefix)
+        90  - AllTest (ALT prefix)
+        80  - Tanner Scientific (TNR prefix)
+        70  - Healgen (HGS prefix)
+        60  - Wondfo (WON prefix)
+        50  - Other brands
+        0   - No brand
+
+    **General** (all other categories):
+        100 - Mercedes Scientific
+        90  - Tanner Scientific
+        50  - Other brands
+        0   - No brand
+    """
+    # Detect category type
+    category_type = self._detect_category_type(categories)
+
+    # Detect brand from multiple sources
+    detected_brand = self._detect_brand(sku, brand, product_name)
+
+    if not detected_brand:
         return 0
+
+    brand_lower = detected_brand.lower()
+
+    # LCMS/HPLC Solvents category
+    if category_type == "lcms_hplc":
+        if brand_lower == "concord technologies":
+            return 100
+        elif brand_lower == "birch biotech":
+            return 90
+        elif brand_lower == "mercedes scientific":
+            return 80
+        elif brand_lower == "tanner scientific":
+            return 70
+        else:
+            return 50
+
+    # Drug Testing category
+    elif category_type == "drug_testing":
+        if brand_lower == "mercedes scientific":
+            return 100
+        elif brand_lower == "alltest":
+            return 90
+        elif brand_lower == "tanner scientific":
+            return 80
+        elif brand_lower == "healgen":
+            return 70
+        elif brand_lower == "wondfo":
+            return 60
+        else:
+            return 50
+
+    # General (all other categories)
+    else:
+        if brand_lower == "mercedes scientific":
+            return 100
+        elif brand_lower == "tanner scientific":
+            return 90
+        else:
+            return 50 if detected_brand else 0
 ```
 
-#### Updated Product Transform (Lines 369-370, 388)
-```python
-# Calculate brand priority (check both brand field and product name)
-brand_priority = self._calculate_brand_priority(specs.get('brand'), name)
+#### 5. Usage in Product Transform (Line 595)
 
-# Add to document
-"brand_priority": brand_priority,  # Priority for in-house brands
+```python
+# Calculate brand priority (category-aware, checks SKU prefix, brand field, and product name)
+brand_priority = self._calculate_brand_priority(sku, specs.get('brand'), name, category_list)
 ```
 
-### File 2: `src/search_rag.py` (Search Logic)
+### File 2: `src/openai_middleware.py` (Middleware Logic)
 
-#### Updated Retrieval Search Sort (Line 295)
+#### Stock-Aware Sort Order (Lines 496-511)
+
+The middleware applies stock-aware brand priority sorting automatically:
+
 ```python
-"sort_by": "brand_priority:desc,_text_match:desc,price:asc",  # In-house brands first
-```
-
-#### Updated Final Search Sort (Lines 605-614)
-```python
-# Always prioritize in-house brands first, then apply other sorting
-nl_sort = parsed_params.get("sort_by", "")
-
-if nl_sort:
-    # User has specific sorting preference (price, temporal, etc.)
-    # In-house brands still appear first, then apply their requested sort
-    sort_by = f"brand_priority:desc,{nl_sort}"
+# Apply default stock-aware brand priority sorting if no sort specified
+if params.get("sort_by") == "" or not params.get("sort_by"):
+    # Default sort: in-stock first, then brand priority, then relevance, then price
+    # Note: "IN_STOCK" < "OUT_OF_STOCK" alphabetically, so asc puts IN_STOCK first
+    params["sort_by"] = "stock_status:asc,brand_priority:desc,_text_match:desc,price:asc"
 else:
-    # Default: brand priority first, then relevance, then price
-    sort_by = "brand_priority:desc,_text_match:desc,price:asc"
+    # User has specific sort (price:asc, created_at:desc, etc.)
+    # Prepend stock and brand priority to maintain stock-aware ranking
+    user_sort = params["sort_by"]
+    params["sort_by"] = f"stock_status:asc,brand_priority:desc,{user_sort}"
 ```
 
-## Current Brand Distribution (Sample of 5,000 products)
+**Sort Order Priority:**
+1. **Stock Status** (`stock_status:asc`) - In-stock products first
+   - `IN_STOCK` appears before `OUT_OF_STOCK` alphabetically
+   - Within in-stock: sorted by brand priority
+   - Within out-of-stock: sorted by brand priority
+2. **Brand Priority** (`brand_priority:desc`) - Category-specific brand ranking
+3. **User-specified sort** (if any) - e.g., price:asc, created_at:desc
+4. **Relevance** (`_text_match:desc`) - Search relevance score (default)
+5. **Price** (`price:asc`) - Lowest price first (default)
 
+**Example Result Order:**
+
+*Query: "HPLC methanol" (no sort specified)*
 ```
-Top Brands:
-- Zeta Corporation:          1,466 products
-- Simport:                     896 products
-- VWR:                         445 products
-- ValuMax:                     249 products
-- Tanner Scientific:           192 products ✅ IN-HOUSE
-- Medtronic:                   136 products
-- 3M:                          131 products
-- Welch Allyn:                 117 products
-- Millipore Sigma:             117 products
-
-IN-HOUSE BRANDS:
-- Mercedes Scientific:           1 product ⚠️ (Data quality issue)
-- Tanner Scientific:           192 products ✅
+1. IN_STOCK  | Priority 100 | Mercedes HPLC Methanol
+2. IN_STOCK  | Priority 90  | Birch HPLC Methanol
+3. IN_STOCK  | Priority 50  | VWR HPLC Methanol
+4. OUT_OF_STOCK | Priority 100 | Mercedes HPLC Methanol
+5. OUT_OF_STOCK | Priority 90  | Birch HPLC Methanol
 ```
 
-### Data Quality Issue & Solution
+*Query: "cheapest HPLC methanol" (user requests price sort)*
+```
+1. IN_STOCK  | Priority 100 | Mercedes HPLC Methanol | $25
+2. IN_STOCK  | Priority 90  | Birch HPLC Methanol | $30
+3. IN_STOCK  | Priority 50  | VWR HPLC Methanol | $35
+4. OUT_OF_STOCK | Priority 100 | Mercedes HPLC Methanol | $20
+5. OUT_OF_STOCK | Priority 90  | Birch HPLC Methanol | $28
+```
 
-The brand data extraction initially showed only **1 product** with "Mercedes Scientific" in the `brand` field. However, many more products have "Mercedes Scientific" in their **product name**.
+**Note:** The middleware (not src/search.py) handles sort_by to ensure stock and brand priority are always applied, even when users request specific sorting.
 
-**Root Cause**:
-1. **Incomplete brand data** in the `additional_attributes` field
-2. **Missing brand field** in many products
-3. Brand information exists in product **names** instead
+## Testing
 
-**Solution Implemented** ✅:
-- Updated `_calculate_brand_priority()` to check **both** brand field AND product name
-- This captures all Mercedes Scientific and Tanner Scientific products regardless of where the brand appears
-- Examples from CSV:
-  - "Mercedes Scientific® StarFrost® Microscope Slides" - brand in name ✅
-  - "Tanner Scientific® Microscope Slides, 90°, Yellow" - brand in name ✅
-  - "Mercedes Scientific Deposit Stress Analyzer" - has brand field ✅
+### Unit Tests
 
-**Result**: Brand prioritization now works correctly for all in-house products!
+Run unit tests to verify the logic:
+
+```bash
+./venv/bin/python3 tests/test_brand_logic.py
+```
+
+**Test Coverage:**
+- ✅ Category type detection (LCMS/HPLC, Drug Testing, General)
+- ✅ Brand detection from SKU prefix, brand field, product name
+- ✅ Priority calculation for all category types
+- ✅ All 7 special brand prefixes (TBK, BIR, MER, ALT, TNR, HGS, WON)
+- ✅ Other brands (VWR, Sigma, Fisher)
+- ✅ Edge cases (no brand, missing data)
+
+**Test Results:**
+```
+=== Category Detection Test ===
+✅ HPLC categories: lcms_hplc (expected: lcms_hplc)
+✅ LCMS categories: lcms_hplc (expected: lcms_hplc)
+✅ Drug Test categories: drug_testing (expected: drug_testing)
+✅ General categories: general (expected: general)
+
+=== Brand Detection Test ===
+✅ TBK 8003LC4000: concord technologies
+✅ BIR 19395: birch biotech
+✅ MER MMDOAY6125: mercedes scientific
+✅ ALT DOAA1137C: alltest
+✅ TNR MMC12MOP: tanner scientific
+✅ HGS HDCL114: healgen
+✅ WON QODOA6126I: wondfo
+
+=== Brand Priority Calculation Test ===
+✅ HPLC - Concord: Priority 100
+✅ LCMS - Birch: Priority 90
+✅ HPLC - Mercedes: Priority 80
+✅ HPLC - Tanner: Priority 70
+✅ HPLC - VWR: Priority 50
+✅ Drug - Mercedes: Priority 100
+✅ Drug - AllTest: Priority 90
+✅ Drug - Tanner: Priority 80
+✅ Drug - Healgen: Priority 70
+✅ Drug - Wondfo: Priority 60
+✅ General - Mercedes: Priority 100
+✅ General - Tanner: Priority 90
+✅ General - VWR: Priority 50
+```
+
+### Integration Tests
+
+After re-indexing, test with real queries:
+
+```bash
+./venv/bin/python3 tests/test_category_brand_ranking.py
+```
+
+**Test Queries:**
+- HPLC methanol
+- LCMS acetonitrile
+- drug test
+- 12-panel drug test cup
+- gloves
+- microscope slides
+
+## Example Queries
+
+### LCMS/HPLC Solvents
+
+**Query:** "HPLC methanol"
+
+**Expected Results Order:**
+1. Concord Technologies methanol (Priority 100)
+2. Birch Biotech methanol (Priority 90)
+3. Mercedes Scientific methanol (Priority 80)
+4. Tanner Scientific methanol (Priority 70)
+5. VWR, Sigma, etc. methanol (Priority 50)
+
+### Drug Testing
+
+**Query:** "12-panel drug test"
+
+**Expected Results Order:**
+1. Mercedes Scientific 12-panel tests (Priority 100)
+2. AllTest 12-panel tests (Priority 90)
+3. Tanner Scientific 12-panel tests (Priority 80)
+4. Healgen 12-panel tests (Priority 70)
+5. Wondfo 12-panel tests (Priority 60)
+6. Other brands (Priority 50)
+
+### General Categories
+
+**Query:** "microscope slides"
+
+**Expected Results Order:**
+1. Mercedes Scientific slides (Priority 100)
+2. Tanner Scientific slides (Priority 90)
+3. All other brands (Priority 50)
 
 ## Re-Indexing Required
 
@@ -158,9 +452,11 @@ The brand data extraction initially showed only **1 product** with "Mercedes Sci
 1. ✅ Deletes existing collection
 2. ✅ Creates new collection with `brand_priority` field
 3. ✅ Fetches all 34k+ products from Neon database
-4. ✅ Calculates brand priority for each product (checks name + brand field)
-5. ✅ Generates embeddings for semantic search
-6. ✅ Indexes to Typesense with brand_priority values
+4. ✅ Detects category type for each product (LCMS/HPLC, Drug Testing, or General)
+5. ✅ Detects brand from SKU prefix, brand field, or product name
+6. ✅ Calculates category-specific brand priority for each product
+7. ✅ Generates embeddings for semantic search
+8. ✅ Indexes to Typesense with brand_priority values
 
 ### Performance After Re-Indexing
 
@@ -169,147 +465,106 @@ The brand data extraction initially showed only **1 product** with "Mercedes Sci
 - Sorting overhead: 0ms (done by Typesense natively)
 - Scalability: Excellent - works for any result set size
 
-## Testing
+## Benefits
 
-### Manual Testing Script
+### ✅ Scalability
+- Works for unlimited number of categories
+- No hardcoded category mappings needed
+- Dynamic detection based on category structure
 
-After re-indexing, run the test script to verify brand prioritization:
+### ✅ Performance
+- Native Typesense sorting (no Python overhead)
+- No post-processing required
+- Optimized for large result sets
 
-```bash
-./venv/bin/python3 test_brand_priority.py
-```
+### ✅ Maintainability
+- Clear separation of concerns
+- Easy to add new brands (just add SKU prefix)
+- Easy to adjust priority scores
+- Well-tested with comprehensive unit tests
 
-This will:
-- Search for common product types (gloves, test tubes, pipettes, microscope slides, etc.)
-- Show top 10 results with brand information
-- Count how many in-house brand products appear in results
-- Verify Typesense is sorting correctly by brand_priority field
-
-### Expected Results (After Re-Indexing)
-
-```
-Query: 'microscope slides'
-================================================================================
-
-Top 13 Results:
---------------------------------------------------------------------------------
- 1. Mercedes Scientific® Cardboard Slide Folder, 20-Place, Red (Each)
-    Brand: Mercedes Scientific            🏠 IN-HOUSE (Priority: 100)
- 2. Mercedes Scientific® Cardboard Slide Folder, 20-Place, Green (Each)
-    Brand: Mercedes Scientific            🏠 IN-HOUSE (Priority: 100)
- 3. Mercedes Scientific® Cardboard Slide Folder, 20-Place, Blue (Each)
-    Brand: Mercedes Scientific            🏠 IN-HOUSE (Priority: 100)
- 4. Mercedes Scientific® Cardboard Slide Folder, 20-Place, Yellow (Each)
-    Brand: Mercedes Scientific            🏠 IN-HOUSE (Priority: 100)
- 5. Simport® SlideTray™ Microscope Slide Holder, 20-Place...
-    Brand: Simport (Priority: 50)
-...
-
-In-house brands in top 13: 4
-✅ SUCCESS: In-house brands are prioritized!
-```
-
-```
-Query: 'yellow slides'
-================================================================================
-1. Priority: 100 | 45° Microscope Slides (Mercedes Scientific)
-2. Priority: 100 | 90° Microscope Slides (Mercedes Scientific)
-3. Priority: 100 | 90° Microscope Slides (Mercedes Scientific)
-4. Priority: 100 | 90° Microscope Slides (Mercedes Scientific)
-5. Priority:  90 | Tanner Scientific® Microscope Slides, 90°, Yellow
-6. Priority:  90 | Tanner Scientific® Microscope Slides, 45°, Yellow
-7. Priority:  90 | Tanner Scientific® Microscope Slides, 90°, Yellow
-8. Priority:  90 | Tanner Scientific® Microscope Slides, 90°, Yellow
-9. Priority:  90 | Tanner Scientific® Microscope Slides, 90°, Yellow
-10. Priority:  50 | Epredia™ Colormark™ Slide Cartridges
-
-✅ Sorting is perfect: Mercedes (100) → Tanner (90) → Others (50)
-✅ Sorting done by Typesense (data-level approach)
-```
+### ✅ Flexibility
+- Different brand rankings per category type
+- Supports brand detection from multiple sources
+- Fallback to general ranking for unknown categories
 
 ## User Query Examples
 
-All these queries will show in-house brands first:
+All these queries will show category-specific brand order:
 
 | Query                                    | Expected Behavior                                          |
 |------------------------------------------|------------------------------------------------------------|
-| `gloves`                                 | Tanner/Mercedes gloves first, then others                  |
-| `cheapest nitrile gloves`                | Tanner/Mercedes gloves first, then sorted by price         |
-| `latest test tubes`                      | Tanner/Mercedes test tubes first, then by created_at       |
-| `microscope slides under $50`            | Tanner/Mercedes slides first, filtered by price            |
-| `Ansell gloves` (explicit brand search)  | Tanner/Mercedes still first, then Ansell gloves            |
-
-## Behavior Notes
-
-### Priority vs. Explicit Filtering
-
-**Scenario 1**: User searches for "gloves"
-- Result: Tanner/Mercedes gloves appear first ✅
-
-**Scenario 2**: User searches for "Ansell gloves" (explicit brand)
-- Current behavior: Tanner/Mercedes gloves STILL appear first ⚠️
-- This might not be desired - if user explicitly asks for "Ansell", they probably want Ansell products
-
-**Recommendation**: Consider adding logic to detect explicit brand mentions and disable priority boost in those cases.
-
-### Alternative: Using `_eval()` Function
-
-Typesense supports the `_eval()` function for more complex sorting:
-
-```python
-# Example: Boost in-house brands without completely overriding other sorts
-"sort_by": "_eval(brand_priority:>=90):desc,price:asc"
-```
-
-This could be explored if the current "always first" approach is too aggressive.
+| `HPLC methanol`                          | Concord/Birch first, then Mercedes/Tanner, then others    |
+| `LCMS acetonitrile`                      | Concord/Birch first, then Mercedes/Tanner, then others    |
+| `drug test cup`                          | Mercedes first, then AllTest/Tanner/Healgen/Wondfo        |
+| `gloves`                                 | Mercedes/Tanner gloves first, then others                  |
+| `cheapest nitrile gloves`                | Mercedes/Tanner gloves first, then sorted by price         |
+| `latest test tubes`                      | Mercedes/Tanner test tubes first, then by created_at       |
+| `microscope slides under $50`            | Mercedes/Tanner slides first, filtered by price            |
 
 ## Future Enhancements
 
-1. **Dynamic Priority Adjustment**
-   - Allow adjusting priority scores via config/environment variables
+1. **Dynamic Priority Configuration**
+   - Load priority scores from config/database
+   - Allow adjusting priorities without code changes
    - Support promotional boosts for specific brands temporarily
 
-2. **Smart Brand Detection**
-   - Detect when user explicitly searches for a specific brand
-   - Disable in-house brand boost in those cases
+2. **More Category Types**
+   - Add priority rules for other specific categories
+   - Support sub-category specific rankings
 
-3. **Brand Data Quality Improvements**
+3. **Brand Aliases**
+   - Handle brand name variations
+   - Support parent/subsidiary brand relationships
+
+4. **Smart Brand Detection**
+   - Detect when user explicitly searches for a specific brand
+   - Consider disabling in-house brand boost in those cases
+
+5. **A/B Testing**
+   - Test user engagement with different brand rankings
+   - Measure conversion rates by brand
+   - Optimize rankings based on user behavior
+
+6. **Brand Data Quality Improvements**
    - Fix brand extraction from database
    - Ensure all products have accurate brand information
    - Consider adding brand aliases (e.g., "Mercedes" → "Mercedes Scientific")
-
-4. **A/B Testing**
-   - Test user engagement with/without brand prioritization
-   - Measure conversion rates for in-house vs. third-party brands
 
 ## Deployment Checklist
 
 ### Implementation Status
 
-- [x] ✅ Create git branch: `features/brand-prioritization`
+- [x] ✅ Create git branch: `JAI-2165-Implement-brand-ranking-preferences`
 - [x] ✅ Add `brand_priority` field to Typesense schema
-- [x] ✅ Implement priority calculation in indexer
+- [x] ✅ Implement `_detect_category_type()` method
+- [x] ✅ Implement `_detect_brand()` method
+- [x] ✅ Update `_calculate_brand_priority()` for category-specific ranking
+- [x] ✅ Update product transform to pass categories
 - [x] ✅ Update search queries to sort by `brand_priority:desc`
+- [x] ✅ Create unit tests for logic validation
+- [x] ✅ Create integration tests for search
+- [x] ✅ Document implementation
 - [ ] 🔄 **Re-index Typesense collection** (35-45 min) - **REQUIRED**
-- [ ] ✅ Test brand prioritization with test script
-- [ ] ✅ Verify in-house brands appear first in results
+- [ ] ✅ Run integration tests to verify ranking
+- [ ] ✅ Verify category-specific brand order in search results
 - [ ] 📊 Monitor search analytics after production deployment
-- [ ] 🔧 Optional: Improve brand data quality (extract brand field better)
 
 ## Contact
 
 For questions or issues with this implementation, refer to:
 - `CLAUDE.md` - Project context
 - `DEPLOYMENT.md` - Deployment guide
-- `docs/RAG_DUAL_LLM_APPROACH.md` - Search architecture
+- `docs/FEATURE_STATUS.md` - Feature implementation status
 
 ---
 
-**Last Updated**: 2025-10-21
-**Branch**: `features/brand-prioritization`
+**Last Updated**: 2025-11-07
+**Branch**: `JAI-2165-Implement-brand-ranking-preferences`
+**Jira Ticket**: JAI-2165
 **Status**: ✅ Implementation complete, ⏳ **Pending re-indexing**
-**Version**: 2.3.0 (Brand Prioritization - Data-Level Approach)
+**Version**: 2.4.0 (Category-Specific Brand Prioritization)
 
-**Next Step**: Re-index collection (35-45 min) to activate brand prioritization
+**Next Step**: Re-index collection (35-45 min) to activate category-specific brand prioritization
 **Performance**: Native Typesense sorting, 0ms overhead
 **Approach**: Clean data-level implementation for optimal performance
