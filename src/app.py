@@ -1,10 +1,11 @@
 """FastAPI server for natural language search."""
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from config import Config
 from search import Search
 from models import SearchQuery, SearchResponse
+from restrictions import get_user_permissions, build_restriction_filter
 from pydantic import BaseModel, Field
 import traceback
 from typing import Optional
@@ -103,12 +104,13 @@ async def health():
 
 
 @app.post("/api/search", response_model=SearchResponse)
-async def search(request: SearchRequest):
+async def search(search_request: SearchRequest, request: Request):
     """
-    Search products using natural language.
+    Search products using natural language with restriction filtering.
 
     Uses Typesense NL integration with RAG-based category classification:
     - API calls Typesense with nl_query=true
+    - Applies restriction filter based on user permissions
     - Typesense calls middleware for RAG classification
     - Middleware returns search parameters with category filter
     - Results returned to user
@@ -119,6 +121,11 @@ async def search(request: SearchRequest):
         "max_results": 20
     }
 
+    Request headers (optional):
+    - Authorization: Bearer <token>
+    - X-Customer-Permissions: comma-separated permissions (e.g., "restricted_access")
+    - X-Customer-Group: customer group (e.g., "authorized", "premium")
+
     Response:
     {
         "results": [...],
@@ -128,9 +135,17 @@ async def search(request: SearchRequest):
     }
     """
     try:
+        # Get user permissions from request headers
+        user_permissions = await get_user_permissions(request)
+
+        # Build restriction filter (empty if user has access)
+        restriction_filter = build_restriction_filter(user_permissions)
+
+        # Execute search with restriction filter
         response = await search_engine.search(
-            query=request.query,
-            max_results=request.max_results
+            query=search_request.query,
+            max_results=search_request.max_results,
+            restriction_filter=restriction_filter
         )
         return response
 
@@ -167,22 +182,36 @@ async def search(request: SearchRequest):
 
 @app.get("/api/search", response_model=SearchResponse)
 async def search_get(
+    request: Request,
     q: str = Query(..., description="Search query"),
     limit: int = Query(20, description="Max results", ge=1, le=100)
 ):
     """
-    Search products using query parameters (alternative to POST).
+    Search products using query parameters with restriction filtering (alternative to POST).
 
     Query params:
         q: Search query
         limit: Max results (default: 20)
 
+    Request headers (optional):
+    - Authorization: Bearer <token>
+    - X-Customer-Permissions: comma-separated permissions (e.g., "restricted_access")
+    - X-Customer-Group: customer group (e.g., "authorized", "premium")
+
     Example: /api/search?q=gloves%20under%20$50&limit=10
     """
     try:
+        # Get user permissions from request headers
+        user_permissions = await get_user_permissions(request)
+
+        # Build restriction filter (empty if user has access)
+        restriction_filter = build_restriction_filter(user_permissions)
+
+        # Execute search with restriction filter
         response = await search_engine.search(
             query=q,
-            max_results=limit
+            max_results=limit,
+            restriction_filter=restriction_filter
         )
         return response
 

@@ -81,6 +81,8 @@ class NeonProductIndexer:
                 # Temporal fields for "latest" queries
                 {"name": "created_at", "type": "int64", "optional": True, "sort": True},
                 {"name": "updated_at", "type": "int64", "optional": True, "sort": True},
+                # Restriction field for access control
+                {"name": "restricted_class", "type": "string", "facet": True, "optional": True},
                 # Embedding field for semantic search (now includes brand, size, color)
                 {
                     "name": "embedding",
@@ -480,6 +482,8 @@ class NeonProductIndexer:
                 # Temporal fields
                 "created_at": created_ts,
                 "updated_at": updated_ts,
+                # Restriction field for access control
+                "restricted_class": specs.get('restricted_class'),
             }
 
         except Exception as e:
@@ -524,7 +528,7 @@ class NeonProductIndexer:
                 value = value.strip()
 
                 # Extract important specs
-                if key in ['brand', 'grade', 'size', 'color', 'physical_form', 'cas_number', 'type_attribute']:
+                if key in ['brand', 'grade', 'size', 'color', 'physical_form', 'cas_number', 'type_attribute', 'restricted_class']:
                     # Clean value (remove quotes, braces for simple values)
                     if value.startswith('{') or value.startswith('['):
                         continue  # Skip complex nested values
