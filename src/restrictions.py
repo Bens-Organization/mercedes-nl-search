@@ -1,18 +1,60 @@
 """
 Restricted Item Access Control Module
 
-This module handles access control for restricted items (Beckman/Olympus products)
-that require special account permissions to view and search.
+This module handles access control for 3 classes of restricted items that require
+special account permissions to view, search, or purchase.
+
+Three Restricted Classes:
+
+1. FUO (Forensic Use Only) - "FORENSIC USE ONLY"
+   - Visible to all users
+   - Cannot add to cart without permissions
+   - Requires form: https://marketing.mercedesscientific.com/en-us/fuo-form
+
+2. CLIA Waived - "CLIA WV"
+   - Visible to all users
+   - Cannot add to cart without permissions
+   - Requires CLIA license submitted to CLIA@Mercedesscientific.com
+
+3. Alternative Sourced Items - "ALT SOURCE"
+   - Hidden from users without permissions
+   - Cannot add to cart without permissions
+   - Typically Beckman Coulter and Olympus products
 
 Business Rules:
-- Beckman Coulter and Olympus branded products are restricted
-- Non-authenticated users OR users without permissions cannot see restricted items
-- Authenticated users with permissions can see restricted items with disclaimers
+- FUO and CLIA WV: Always visible, purchase requires authorization
+- ALT SOURCE: Hidden unless user has restricted_access permission
+- Authenticated users with permissions can see all items with disclaimers
 """
 
 from typing import Dict, Any, Optional
 from config import Config
 from fastapi import Request
+
+
+class RestrictedClass:
+    """
+    Constants for the 3 restricted classes of products.
+
+    Database Field: restricted_class_id (from customer_x_restricted_class table)
+    """
+    # Forensic Use Only
+    FORENSIC_USE_ONLY = "FORENSIC USE ONLY"
+
+    # CLIA Waived (Clinical Laboratory Improvement Amendments)
+    CLIA_WAIVED = "CLIA WV"
+
+    # Alternative Sourced Items (third-party distributors)
+    ALT_SOURCE = "ALT SOURCE"
+
+    # All restricted classes
+    ALL = [FORENSIC_USE_ONLY, CLIA_WAIVED, ALT_SOURCE]
+
+    # Classes that are visible to all users (but not purchasable without permission)
+    VISIBLE_CLASSES = [FORENSIC_USE_ONLY, CLIA_WAIVED]
+
+    # Classes that are hidden from unauthorized users
+    HIDDEN_CLASSES = [ALT_SOURCE]
 
 
 def is_restricted_brand(brand: Optional[str]) -> bool:
@@ -194,17 +236,140 @@ def build_restriction_filter(user_permissions: Dict[str, Any]) -> str:
     return "restricted_class:!=[ALT SOURCE]"
 
 
-def get_restriction_disclaimer() -> str:
+def is_hidden_restriction(restricted_class: Optional[str]) -> bool:
     """
-    Get the disclaimer text for restricted items.
+    Check if a restriction class means the product should be hidden from unauthorized users.
+
+    Args:
+        restricted_class: The restricted_class value ("FORENSIC USE ONLY", "CLIA WV", "ALT SOURCE", or None)
 
     Returns:
-        Disclaimer text to display for authorized users
+        True if product should be hidden (ALT SOURCE only), False otherwise
+
+    Examples:
+        >>> is_hidden_restriction("ALT SOURCE")
+        True
+        >>> is_hidden_restriction("FORENSIC USE ONLY")
+        False
+        >>> is_hidden_restriction("CLIA WV")
+        False
+        >>> is_hidden_restriction(None)
+        False
     """
-    return (
-        "This product is a genuine Beckman Coulter® item acquired through "
-        "independent, third-party distribution channels. Mercedes Scientific is "
-        "not an authorized distributor of Beckman Coulter products. As such, "
-        "purchase of this product may not satisfy any requirements for authorized "
-        "distribution channels."
-    )
+    return restricted_class in RestrictedClass.HIDDEN_CLASSES
+
+
+def is_visible_restriction(restricted_class: Optional[str]) -> bool:
+    """
+    Check if a restriction class means the product is visible but not purchasable.
+
+    Args:
+        restricted_class: The restricted_class value
+
+    Returns:
+        True if product is visible but requires authorization to purchase (FUO, CLIA WV)
+
+    Examples:
+        >>> is_visible_restriction("FORENSIC USE ONLY")
+        True
+        >>> is_visible_restriction("CLIA WV")
+        True
+        >>> is_visible_restriction("ALT SOURCE")
+        False
+    """
+    return restricted_class in RestrictedClass.VISIBLE_CLASSES
+
+
+def requires_authorization(restricted_class: Optional[str]) -> bool:
+    """
+    Check if a product requires authorization to purchase (any restricted class).
+
+    Args:
+        restricted_class: The restricted_class value
+
+    Returns:
+        True if product requires authorization to purchase
+
+    Examples:
+        >>> requires_authorization("FORENSIC USE ONLY")
+        True
+        >>> requires_authorization("CLIA WV")
+        True
+        >>> requires_authorization("ALT SOURCE")
+        True
+        >>> requires_authorization(None)
+        False
+    """
+    return restricted_class in RestrictedClass.ALL
+
+
+def get_restriction_disclaimer(restricted_class: Optional[str]) -> Optional[str]:
+    """
+    Get the appropriate disclaimer text for a restricted item.
+
+    Args:
+        restricted_class: The restricted_class value
+
+    Returns:
+        Disclaimer text specific to the restriction class, or None if not restricted
+
+    Examples:
+        >>> get_restriction_disclaimer("FORENSIC USE ONLY")
+        'This product is for forensic use only...'
+        >>> get_restriction_disclaimer(None)
+        None
+    """
+    if restricted_class == RestrictedClass.FORENSIC_USE_ONLY:
+        return (
+            "⚠️ FORENSIC USE ONLY: This product is restricted to forensic laboratory use. "
+            "Authorization is required to purchase. Please complete the form at "
+            "https://marketing.mercedesscientific.com/en-us/fuo-form"
+        )
+    elif restricted_class == RestrictedClass.CLIA_WAIVED:
+        return (
+            "⚠️ CLIA WAIVED: This product requires CLIA certification. "
+            "Authorization is required to purchase. Please submit your CLIA license to "
+            "CLIA@Mercedesscientific.com"
+        )
+    elif restricted_class == RestrictedClass.ALT_SOURCE:
+        return (
+            "⚠️ ALTERNATIVE SOURCED: This product is acquired through independent, "
+            "third-party distribution channels. Mercedes Scientific is not an authorized "
+            "distributor for this brand. Purchase may not satisfy requirements for "
+            "authorized distribution channels. Authorization is required to view and purchase."
+        )
+
+    return None
+
+
+def get_restriction_info(restricted_class: Optional[str]) -> Dict[str, Any]:
+    """
+    Get comprehensive information about a restriction class.
+
+    Args:
+        restricted_class: The restricted_class value
+
+    Returns:
+        Dictionary with restriction information:
+        - is_restricted: bool - Product has any restriction
+        - is_visible: bool - Product is visible to all users
+        - is_hidden: bool - Product is hidden from unauthorized users
+        - requires_auth: bool - Purchase requires authorization
+        - disclaimer: str - Disclaimer text
+        - restriction_type: str - Type of restriction
+
+    Examples:
+        >>> info = get_restriction_info("ALT SOURCE")
+        >>> info["is_hidden"]
+        True
+        >>> info["is_visible"]
+        False
+    """
+    return {
+        "is_restricted": requires_authorization(restricted_class),
+        "is_visible": not is_hidden_restriction(restricted_class),
+        "is_hidden": is_hidden_restriction(restricted_class),
+        "requires_auth": requires_authorization(restricted_class),
+        "disclaimer": get_restriction_disclaimer(restricted_class),
+        "restriction_type": restricted_class
+    }
