@@ -38,7 +38,11 @@ class Product(BaseModel):
     categories: List[str] = Field(default_factory=list)
     # Product attributes
     brand: Optional[str] = None
-    restricted_class: Optional[str] = None  # For access control (ALT SOURCE = restricted)
+    # Restricted class: "FORENSIC USE ONLY", "CLIA WV", "ALT SOURCE", or None
+    # - FUO: Visible, requires authorization to purchase
+    # - CLIA WV: Visible, requires authorization to purchase
+    # - ALT SOURCE: Hidden unless authorized, requires authorization to purchase
+    restricted_class: Optional[str] = None
 
 
 class SearchQuery(BaseModel):
