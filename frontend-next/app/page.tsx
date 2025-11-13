@@ -2,7 +2,7 @@
 import { useState, FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import Heading from '@/components/Heading';
-import Form from '@/components/Form';
+import { PlaceholdersAndVanishInput } from '@/components/ui/placeholders-and-vanish-input';
 import ProductListItem from '@/components/ProductListItem';
 
 interface Product {
@@ -165,12 +165,10 @@ export default function Home() {
 
         {/* Search Section */}
         <div className="w-full mb-8">
-          <Form
-            query={query}
-            setQuery={setQuery}
+          <PlaceholdersAndVanishInput
+            placeholders={exampleQueries}
+            onChange={(e) => setQuery(e.target.value)}
             onSubmit={handleSubmit}
-            placeholder="Type in the product specification, e.g. nitrile gloves, powder-free, under $50..."
-            autoFocus
           />
         </div>
 
@@ -202,11 +200,10 @@ export default function Home() {
 
       {/* Search Bar */}
       <div className="w-full mb-4">
-        <Form
-          query={query}
-          setQuery={setQuery}
+        <PlaceholdersAndVanishInput
+          placeholders={exampleQueries}
+          onChange={(e) => setQuery(e.target.value)}
           onSubmit={handleSubmit}
-          placeholder="Type in the product specification, e.g. nitrile gloves, powder-free, under $50..."
         />
       </div>
 
