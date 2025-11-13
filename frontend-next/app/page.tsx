@@ -172,6 +172,7 @@ export default function Home() {
             onChange={(e) => setQuery(e.target.value)}
             onSubmit={handleSubmit}
             currentPlaceholderIndex={hoveredExampleIndex}
+            value={query}
           />
         </div>
 
@@ -210,6 +211,7 @@ export default function Home() {
           onChange={(e) => setQuery(e.target.value)}
           onSubmit={handleSubmit}
           currentPlaceholderIndex={hoveredExampleIndex}
+          value={query}
         />
       </div>
 

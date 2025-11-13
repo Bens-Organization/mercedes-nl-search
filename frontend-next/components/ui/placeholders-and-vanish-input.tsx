@@ -9,15 +9,16 @@ export function PlaceholdersAndVanishInput({
   onChange,
   onSubmit,
   currentPlaceholderIndex,
+  value = "",
 }: {
   placeholders: string[];
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   currentPlaceholderIndex?: number;
+  value?: string;
 }) {
   const [internalPlaceholder, setInternalPlaceholder] = useState(0);
   const currentPlaceholder = currentPlaceholderIndex !== undefined ? currentPlaceholderIndex : internalPlaceholder;
-  const [value, setValue] = useState("");
   const [animating, setAnimating] = useState(false);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -121,13 +122,11 @@ export function PlaceholdersAndVanishInput({
 
     setTimeout(() => {
       setAnimating(false);
-      setValue("");
       onSubmit(e);
     }, 2000);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setValue(e.target.value);
     onChange && onChange(e);
   };
 
