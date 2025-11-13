@@ -145,6 +145,7 @@ export default function Home() {
   };
 
   const handleExampleClick = (example: string) => {
+    setQuery(example);
     handleSearch(example);
   };
 
