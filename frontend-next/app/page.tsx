@@ -38,6 +38,7 @@ export default function Home() {
   const [hasSearched, setHasSearched] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [hoveredExampleIndex, setHoveredExampleIndex] = useState<number | undefined>(undefined);
 
   const exampleQueries = [
     'Gloves in stock under $50',
@@ -169,6 +170,7 @@ export default function Home() {
             placeholders={exampleQueries}
             onChange={(e) => setQuery(e.target.value)}
             onSubmit={handleSubmit}
+            currentPlaceholderIndex={hoveredExampleIndex}
           />
         </div>
 
@@ -182,6 +184,8 @@ export default function Home() {
               <li
                 key={index}
                 onClick={() => handleExampleClick(example)}
+                onMouseEnter={() => setHoveredExampleIndex(index)}
+                onMouseLeave={() => setHoveredExampleIndex(undefined)}
                 className="w-full py-2.5 px-3 border border-gray-200 rounded-lg cursor-pointer hover:border-journey-teal hover:bg-gray-50 transition"
               >
                 {example}
@@ -204,6 +208,7 @@ export default function Home() {
           placeholders={exampleQueries}
           onChange={(e) => setQuery(e.target.value)}
           onSubmit={handleSubmit}
+          currentPlaceholderIndex={hoveredExampleIndex}
         />
       </div>
 

@@ -8,12 +8,15 @@ export function PlaceholdersAndVanishInput({
   placeholders,
   onChange,
   onSubmit,
+  currentPlaceholderIndex,
 }: {
   placeholders: string[];
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  currentPlaceholderIndex?: number;
 }) {
-  const [currentPlaceholder, setCurrentPlaceholder] = useState(0);
+  const [internalPlaceholder, setInternalPlaceholder] = useState(0);
+  const currentPlaceholder = currentPlaceholderIndex !== undefined ? currentPlaceholderIndex : internalPlaceholder;
   const [value, setValue] = useState("");
   const [animating, setAnimating] = useState(false);
 
@@ -23,9 +26,12 @@ export function PlaceholdersAndVanishInput({
   const newDataRef = useRef<any[]>([]);
 
   const startAnimation = () => {
-    intervalRef.current = setInterval(() => {
-      setCurrentPlaceholder((prev) => (prev + 1) % placeholders.length);
-    }, 3000);
+    // Only auto-rotate if not externally controlled
+    if (currentPlaceholderIndex === undefined) {
+      intervalRef.current = setInterval(() => {
+        setInternalPlaceholder((prev) => (prev + 1) % placeholders.length);
+      }, 3000);
+    }
   };
 
   const handleVisibilityChange = () => {
@@ -38,7 +44,14 @@ export function PlaceholdersAndVanishInput({
   };
 
   useEffect(() => {
-    startAnimation();
+    // Clear existing interval when switching to external control
+    if (currentPlaceholderIndex !== undefined && intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    } else {
+      startAnimation();
+    }
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
@@ -47,7 +60,7 @@ export function PlaceholdersAndVanishInput({
       }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [placeholders]);
+  }, [placeholders, currentPlaceholderIndex]);
 
   const draw = useCallback(() => {
     if (!inputRef.current) return;
