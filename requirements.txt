@@ -25,6 +25,11 @@ pydantic>=2.10.0
 # PostgreSQL (for Neon database)
 psycopg2-binary>=2.9.9
 
+# Redis (for LLM caching)
+redis>=5.0.0
+hiredis>=2.2.3  # Fast C parser for Redis protocol
+langcache>=0.1.0  # Official Redis LangCache SDK
+
 # MySQL (for Magento database)
 mysql-connector-python>=8.0.33
 

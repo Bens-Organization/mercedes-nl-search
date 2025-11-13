@@ -31,6 +31,14 @@ class Config:
     ENVIRONMENT = os.getenv("ENVIRONMENT") or os.getenv("FLASK_ENV", "development")
     SERVER_PORT = int(os.getenv("SERVER_PORT") or os.getenv("FLASK_PORT", "5001"))
 
+    # Restricted Items Configuration
+    RESTRICTED_BRANDS = os.getenv("RESTRICTED_BRANDS", "Beckman Coulter,Olympus").split(",")
+    RESTRICTED_SKU_PREFIXES = os.getenv("RESTRICTED_SKU_PREFIXES", "BEY,OSR").split(",")
+
+    # Authentication (for future use)
+    AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+    AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "")
+
     @classmethod
     def validate(cls):
         """Validate required configuration."""

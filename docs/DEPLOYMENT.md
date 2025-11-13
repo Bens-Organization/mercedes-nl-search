@@ -6,14 +6,23 @@ Complete guide for deploying Mercedes Scientific NL Search to production.
 
 This project is deployed using:
 - **Frontend**: Vercel (Next.js)
-- **Backend API**: Render (FastAPI/Python)
+- **Backend API**: Railway (FastAPI/Python)
+- **Middleware**: Railway (OpenAI-compatible RAG)
 - **Search Engine**: Typesense Cloud (8GB cluster)
 - **Database**: Neon PostgreSQL
 - **AI Services**: OpenAI (GPT-4o-mini + text-embedding-3-small)
 
 **Live URLs**:
-- Frontend: https://mercedes-nl-search.vercel.app
-- Backend: https://mercedes-search-api.onrender.com
+- **Frontend**: https://mercedes-nl-search.vercel.app
+- **Backend (Production)**: https://mercedes-nl-search-production.up.railway.app
+- **Backend (Staging)**: https://mercedes-nl-search-staging.up.railway.app
+- **Middleware**: https://web-production-a5d93.up.railway.app
+
+**Why Railway?** Backend migrated from Render to eliminate 30-50 second cold start delays caused by free tier inactivity timeout.
+
+**Environments**:
+- **Production**: Connected to production Typesense and Neon database
+- **Staging**: Used for testing before production deployment
 
 ---
 
@@ -23,7 +32,7 @@ This project is deployed using:
 - OpenAI API key ([platform.openai.com](https://platform.openai.com))
 - Typesense Cloud account ([cloud.typesense.org](https://cloud.typesense.org))
 - Neon PostgreSQL database ([neon.tech](https://neon.tech))
-- Render account ([render.com](https://render.com))
+- Railway account ([railway.app](https://railway.app))
 - Vercel account ([vercel.com](https://vercel.com))
 
 ---
@@ -38,32 +47,29 @@ git commit -m "Initial commit"
 git push origin main
 ```
 
-### 2. Deploy Backend (Render)
+### 2. Deploy Backend (Railway)
 
-1. Go to [render.com](https://render.com) → New Web Service
+**For detailed Railway deployment guide, see [RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md)**
+
+Quick steps:
+
+1. Go to [railway.app](https://railway.app) → New Project
 2. Connect your GitHub repository
-3. Configure:
-   ```
-   Name: mercedes-search-api
-   Environment: Python 3
-   Build Command: pip install -r requirements.txt
-   Start Command: python src/app.py
-   ```
+3. Railway will auto-detect `Dockerfile` from `railway.toml`
+4. Select `staging` environment
+5. Add environment variables (see Environment Variables section below)
+6. Deploy - Railway will use the correct Dockerfile automatically
+7. Wait 2-3 minutes for deployment
+8. Save your API URL: `https://your-service.up.railway.app`
 
-4. Add environment variables (see Environment Variables section below)
-5. Click "Create Web Service"
-6. Wait 5-10 minutes for deployment
-7. Save your API URL: `https://your-service.onrender.com`
+**Note**: The `railway.toml` file uses environment-specific configuration to manage both backend and middleware services.
 
 ### 3. Setup Search Engine
 
 **Register NL Model** (run once):
 ```bash
-# Option A: Locally (with production credentials in .env)
-python src/setup_nl_model.py
-
-# Option B: Via Render Shell
-# Render Dashboard → Shell tab → run above command
+# Locally (with production credentials in .env)
+python src/setup_middleware_model.py
 ```
 
 **Index Products** (run once):
@@ -86,7 +92,7 @@ python src/indexer_neon.py
    ```
 4. Add environment variable:
    ```
-   NEXT_PUBLIC_API_URL=https://your-render-url.onrender.com
+   NEXT_PUBLIC_API_URL=https://your-service.up.railway.app
    ```
 5. Deploy
 
@@ -108,16 +114,16 @@ CORS(app, origins=[
 ])
 ```
 
-Commit and push (Render will auto-deploy).
+Commit and push (Railway will auto-deploy).
 
 ### 6. Test
 
 ```bash
 # Test backend
-curl https://your-api.onrender.com/health
+curl https://your-service.up.railway.app/health
 
 # Test search
-curl -X POST https://your-api.onrender.com/api/search \
+curl -X POST https://your-service.up.railway.app/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "gloves under $50"}'
 
@@ -129,9 +135,9 @@ curl -X POST https://your-api.onrender.com/api/search \
 
 ## Environment Variables
 
-### Backend (Render)
+### Backend (Railway)
 
-Required variables for your Render web service:
+Required variables for your Railway service:
 
 ```bash
 # OpenAI
@@ -181,7 +187,7 @@ SERVER_PORT=5001
 Required variables for your Vercel project:
 
 ```bash
-NEXT_PUBLIC_API_URL=https://your-render-api.onrender.com
+NEXT_PUBLIC_API_URL=https://your-service.up.railway.app
 ```
 
 **Important**: Must start with `NEXT_PUBLIC_` for Next.js client-side access.
@@ -213,9 +219,10 @@ Products are stored with semantic embeddings in RAM:
 ### Backend Issues
 
 **"Application failed to start"**
-- Check Render logs for Python errors
+- Check Railway logs for Python errors
 - Verify all environment variables are set correctly
-- Ensure requirements.txt is complete
+- Ensure Dockerfile has correct `PYTHONPATH` setting
+- Check that `railway.toml` is configured properly
 
 **"Search not returning results"**
 - Run indexer: `python src/indexer_neon.py`
@@ -223,9 +230,10 @@ Products are stored with semantic embeddings in RAM:
 - Verify collection exists and has data
 
 **"Query translation not working"**
-- Ensure NL model is registered: `python src/setup_nl_model.py`
-- Check `search.py` uses correct model ID: `"openai-gpt4o-mini"`
-- Verify in Render logs that `nl_query=true` is being used
+- Ensure middleware model is registered: `python src/setup_middleware_model.py`
+- Check `search.py` uses correct model ID: `"middleware-rag-vllm"`
+- Verify in Railway logs that `nl_query=true` is being used
+- Check middleware service is running: `curl https://web-production-a5d93.up.railway.app/health`
 
 **"OpenAI API error"**
 - Verify API key is valid
@@ -240,8 +248,9 @@ Products are stored with semantic embeddings in RAM:
 ### Frontend Issues
 
 **"Failed to fetch" or CORS errors**
-- Verify `NEXT_PUBLIC_API_URL` in Vercel matches Render URL
+- Verify `NEXT_PUBLIC_API_URL` in Vercel matches Railway URL
 - Check CORS in `src/app.py` includes your Vercel URL
+- Ensure `allow_origin_regex` is configured for wildcard domains
 - Redeploy backend after CORS changes
 - Clear browser cache
 
@@ -257,11 +266,16 @@ Products are stored with semantic embeddings in RAM:
 
 ### Deployment Issues
 
-**Render not auto-deploying on git push**
-- Check Settings → Build & Deploy → Auto-Deploy is "On Commit"
-- Verify Branch is set to "main"
-- Check GitHub webhook in repo Settings → Webhooks
+**Railway not auto-deploying on git push**
+- Check GitHub integration is connected
+- Verify branch is configured in Railway settings
+- Check repository webhook in GitHub Settings → Webhooks
 - Try manual deploy to verify it works
+
+**Wrong Dockerfile being used**
+- Verify `railway.toml` has environment-specific configuration
+- Check Railway dashboard shows correct Dockerfile path for each service
+- See [RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md) for multi-service setup
 
 **Vercel deployment failing**
 - Check build logs for errors
@@ -311,16 +325,15 @@ Re-run the indexer anytime to:
 
 ## Post-Deployment
 
-### Keep Render Backend Awake (Free Tier)
+### Railway Free Tier Notes
 
-Render free tier sleeps after 15 minutes of inactivity:
+**Good news!** Railway free tier doesn't have the aggressive sleep policy that Render does:
+- No 15-minute inactivity timeout
+- Faster cold starts (~5-10 seconds vs 30-50 seconds)
+- Better resource allocation
+- No need for uptime monitoring services
 
-1. Sign up at [uptimerobot.com](https://uptimerobot.com) (free)
-2. Create monitor:
-   - Type: HTTP(s)
-   - URL: `https://your-api.onrender.com/health`
-   - Interval: 5 minutes
-3. Backend stays awake 24/7
+This is why we migrated from Render to Railway - to eliminate the cold start delays that were impacting user experience.
 
 ### Custom Domain
 

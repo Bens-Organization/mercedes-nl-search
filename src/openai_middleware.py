@@ -40,6 +40,7 @@ from datetime import datetime
 
 from src.config import Config
 import typesense
+from src.cache_layer import get_cache
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -319,7 +320,7 @@ def build_enriched_prompt(
 **Field Rules**:
 - `q`: Cleaned query with descriptive terms (required)
 - `filter_by`: Use "" for no filters, OR "price:<50" OR "price:<50 && stock_status:=IN_STOCK" (string)
-- `sort_by`: Use "" for default sort, OR "price:asc" OR "created_at:desc" (string)
+- `sort_by`: Use "" for default relevance, OR "price:asc" for cheapest, OR "price:desc" for most expensive, OR "created_at:desc" for newest (string)
 - `per_page`: Always 20 (number)
 - `detected_category`: Use null for no category, OR "Products/Full/Path" (string or null)
 - `category_confidence`: 0.0 to 1.0 (number)
@@ -327,7 +328,7 @@ def build_enriched_prompt(
 
 IMPORTANT:
 - Return ONLY the JSON object above. Do NOT wrap it in markdown code fences or any other formatting.
-- Use "" (empty string) not "field:direction" for sort_by if no sort needed
+- Keep `sort_by` simple: "" (default), "price:asc" (cheapest), "price:desc" (expensive), "created_at:desc" (newest)
 - Use null not "null" string for detected_category when no category
 - If detected_category is not null AND category_confidence >= 0.75, it will be applied to filter_by automatically
 - Be CONSERVATIVE with category detection - null is better than wrong category
@@ -362,7 +363,7 @@ Retrieved categories: ["Brand: Mercedes Scientific", "Products/Gloves & Apparel/
 
 Example 5:
 Query: "centrifuge tubes 50ml capacity"
-Retrieved categories: ["Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "Brand: Celltreat"]
+Retrieved categories: ["Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "Brand": Celltreat"]
 → {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity - exact category match in results"}}
 
 Example 6:
@@ -370,7 +371,7 @@ Query: "pipettes on sale sorted by price"
 Retrieved categories: ["Products/Pipettes", "Brand: Thermo Fisher"]
 → {{"q": "pipette", "filter_by": "special_price:>0", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Clear product type with sale filter and price sort"}}
 
-Note: Always use "" for empty strings, never use placeholder text like "field:direction"!
+Note: Middleware will automatically prepend "in_stock_priority:desc,brand_priority:desc" to all sort_by values!
 """
 
     # Return messages: system prompt + enriched user content
@@ -380,14 +381,49 @@ Note: Always use "" for empty strings, never use placeholder text like "field:di
     ]
 
 
-async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini") -> Dict[str, Any]:
+async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", use_cache: bool = True, cache_key: str = None) -> Dict[str, Any]:
     """
     Call the real OpenAI API with enriched messages.
+
+    Args:
+        messages: Chat messages to send to OpenAI
+        model: Model to use
+        use_cache: Whether to use caching (default: True)
+        cache_key: Optional explicit cache key (original user query). If not provided, extracts from messages.
+
+    Returns:
+        OpenAI API response (from cache or fresh API call)
     """
     # Strip "openai/" prefix if present (Typesense sends "openai/gpt-4o-mini")
     if model.startswith("openai/"):
         model = model.replace("openai/", "")
 
+    # Try cache first (if enabled)
+    if use_cache:
+        try:
+            cache = get_cache()
+
+            # Use explicit cache key if provided, otherwise extract from messages
+            if not cache_key:
+                # Fallback: extract from user message content (last user message)
+                # NOTE: This may include RAG context if called after enrichment
+                for msg in reversed(messages):
+                    if msg.role == "user":
+                        cache_key = msg.content
+                        break
+
+            if cache_key:
+                # Try to get from cache
+                cached_response = await cache.get_cached_response(cache_key)
+                if cached_response:
+                    print(f"[CACHE] ✅ Cache hit for OpenAI call")
+                    return cached_response
+
+                print(f"[CACHE] ❌ Cache miss - calling OpenAI API")
+        except Exception as e:
+            print(f"[CACHE] Cache check error (proceeding without cache): {e}")
+
+    # Cache miss or caching disabled - call OpenAI
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
@@ -409,7 +445,18 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini") -
                 detail=f"OpenAI API error: {response.text}"
             )
 
-        return response.json()
+        openai_response = response.json()
+
+    # Cache the response (if caching enabled)
+    if use_cache and cache_key:
+        try:
+            cache = get_cache()
+            await cache.cache_response(cache_key, openai_response)
+            print(f"[CACHE] Response cached for future queries")
+        except Exception as e:
+            print(f"[CACHE] Caching error (response still returned): {e}")
+
+    return openai_response
 
 
 def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75, for_typesense_nl: bool = True) -> Dict[str, Any]:
@@ -493,19 +540,33 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             print(f"[MODE] Decoupled architecture mode - keeping metadata for API layer")
             print(f"[RAG] NOTE: Category filter will be applied by API layer based on confidence")
 
-        # Always prepend brand_priority to sort_by (in-house brands first: Mercedes=100, Tanner=90, Others=50)
+        # Always prepend in_stock_priority and brand_priority to sort_by
+        # This ensures in-stock products and in-house brands appear first
+        # LLM only needs to specify user's sorting preference (price, temporal, etc.)
         llm_sort = params.get("sort_by", "").strip()
-        if llm_sort:
-            # User has specific sorting preference (price, temporal, etc.)
-            # In-house brands still appear first, then apply their requested sort
-            params["sort_by"] = f"brand_priority:desc,{llm_sort}"
-        else:
-            # Default: brand priority first, then relevance, then price
-            params["sort_by"] = "brand_priority:desc,_text_match:desc,price:asc"
 
-        print(f"[BRAND PRIORITY] Applied sort_by: {params['sort_by']}")
+        if llm_sort and llm_sort not in ["", "in_stock_priority:desc,brand_priority:desc"]:
+            # User has specific sorting preference (price, temporal, etc.)
+            # Take only the FIRST sort field to avoid exceeding 3-field limit
+            sort_fields = [f.strip() for f in llm_sort.split(",") if f.strip()]
+            first_sort = sort_fields[0] if sort_fields else ""
+
+            # Skip if it's already a priority field or _text_match (Typesense handles automatically)
+            if first_sort and first_sort not in ["in_stock_priority:desc", "brand_priority:desc",
+                                                 "_text_match:desc"]:
+                params["sort_by"] = f"in_stock_priority:desc,brand_priority:desc,{first_sort}"
+                print(f"[SORT] Prepended stock+brand priority to user sort: {params['sort_by']}")
+            else:
+                params["sort_by"] = "in_stock_priority:desc,brand_priority:desc"
+                print(f"[SORT] Applied default stock-aware brand priority sorting")
+        else:
+            # Default: in-stock priority, brand priority (Typesense handles relevance automatically)
+            params["sort_by"] = "in_stock_priority:desc,brand_priority:desc"
+            print(f"[SORT] Applied default stock-aware brand priority sorting")
 
         # Remove empty string fields (Typesense prefers omitted fields over empty strings)
+        if params.get("sort_by") == "":
+            params.pop("sort_by", None)
         if params.get("filter_by") == "":
             params.pop("filter_by", None)
 
@@ -552,9 +613,20 @@ async def health():
     except Exception as e:
         typesense_status = f"error: {str(e)}"
 
+    # Check cache status
+    cache_status = "unknown"
+    try:
+        cache = get_cache()
+        if not cache._initialized:
+            await cache.initialize()
+        cache_status = cache.mode
+    except Exception as e:
+        cache_status = f"error: {str(e)}"
+
     return {
         "status": "healthy",
         "typesense": typesense_status,
+        "cache": cache_status,
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -566,11 +638,13 @@ async def chat_completions(request: ChatCompletionRequest):
 
     This is the main endpoint that Typesense will call.
     It encapsulates the entire RAG workflow:
-    1. Retrieve relevant products (RAG context)
-    2. Enrich prompt with product context
-    3. Call OpenAI for filter extraction + category classification
-    4. Apply category filter if confident (>= 0.75)
-    5. Return search parameters to Typesense
+    1. Check cache first (early exit if HIT)
+    2. Retrieve relevant products (RAG context) - only on cache MISS
+    3. Enrich prompt with product context
+    4. Call OpenAI for filter extraction + category classification
+    5. Apply category filter if confident (>= 0.75)
+    6. Cache the response
+    7. Return search parameters to Typesense
     """
     try:
         # ENTRY POINT LOGGING: Prove Typesense is calling us
@@ -589,10 +663,44 @@ async def chat_completions(request: ChatCompletionRequest):
         # 1. Extract user query from messages
         user_query = extract_query_from_messages(request.messages)
 
-        # 2. Extract schema info from system message
+        # 2. CHECK CACHE FIRST (before RAG retrieval)
+        try:
+            cache = get_cache()
+            cached_response = await cache.get_cached_response(user_query)
+
+            if cached_response:
+                # CACHE HIT - return immediately without RAG/OpenAI
+                print(f"[CACHE] ✅ HIT - returning cached response (skipped RAG retrieval)", flush=True)
+
+                # Log cached response content for visibility
+                if cached_response.get("choices"):
+                    cached_content = cached_response["choices"][0]["message"]["content"]
+                    content_preview = cached_content[:200] if len(cached_content) > 200 else cached_content
+                    print(f"[CACHE] Cached response: {content_preview}...", flush=True)
+
+                # Apply category filter to cached response (for consistent formatting)
+                for_typesense_nl = request.context is None
+                cached_response = apply_category_filter(cached_response, for_typesense_nl=for_typesense_nl)
+
+                # EXIT LOGGING
+                response_body = json.dumps(cached_response)
+                print(f"\n[RESPONSE] Status: 200 OK (from cache)", flush=True)
+                print(f"[RESPONSE] Content length: {len(response_body)} bytes", flush=True)
+                print(f"{'='*80}\n", flush=True)
+                sys.stdout.flush()
+
+                return cached_response
+
+            # CACHE MISS - proceed with RAG
+            print(f"[CACHE] ❌ MISS - proceeding with RAG retrieval + OpenAI", flush=True)
+
+        except Exception as e:
+            print(f"[CACHE] Cache check error (proceeding without cache): {e}", flush=True)
+
+        # 3. Extract schema info from system message
         schema_info = extract_schema_info(request.messages)
 
-        # 3. Get product context (RAG)
+        # 4. Get product context (RAG) - only executed on cache MISS
         # Decoupled Architecture: Accept context from request (no Typesense calls in middleware)
         if request.context is not None:
             # Context provided by caller (e.g., staging API) - use it directly
@@ -604,17 +712,26 @@ async def chat_completions(request: ChatCompletionRequest):
             products = await retrieve_products(user_query, limit=20)
             print(f"[RAG] Retrieved products from Typesense: {len(products)} products", flush=True)
 
-        # 4. Build enriched prompt with product context
+        # 5. Build enriched prompt with product context
         enriched_messages = build_enriched_prompt(
             user_query,
             products,
             schema_info.get("system_prompt", "")
         )
 
-        # 5. Call real OpenAI API (filter extraction + category classification)
-        openai_response = await call_openai(enriched_messages, model=request.model)
+        # 6. Call real OpenAI API (filter extraction + category classification)
+        # Disable caching in call_openai since we handle it here
+        openai_response = await call_openai(enriched_messages, model=request.model, use_cache=False)
 
-        # 6. Apply category filter if LLM is confident
+        # 7. Cache the response for future queries
+        try:
+            cache = get_cache()
+            await cache.cache_response(user_query, openai_response)
+            print(f"[CACHE] Response cached for future queries", flush=True)
+        except Exception as e:
+            print(f"[CACHE] Caching error (response still returned): {e}", flush=True)
+
+        # 8. Apply category filter if LLM is confident
         # Determine mode based on whether context was provided:
         # - context provided (decoupled) → keep metadata for API layer
         # - no context (Typesense NL) → remove metadata for compatibility
@@ -622,7 +739,7 @@ async def chat_completions(request: ChatCompletionRequest):
         print(f"[MODE] {'Typesense NL integration' if for_typesense_nl else 'Decoupled architecture'} (context={'not provided' if for_typesense_nl else 'provided'})")
         openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl)
 
-        # 7. EXIT LOGGING: Show exact response being sent to Typesense
+        # 9. EXIT LOGGING: Show exact response being sent to Typesense
         response_body = json.dumps(openai_response)
         content_preview = openai_response["choices"][0]["message"]["content"][:200] if openai_response.get("choices") else "N/A"
         print(f"\n[RESPONSE] Status: 200 OK", flush=True)
@@ -631,7 +748,7 @@ async def chat_completions(request: ChatCompletionRequest):
         print(f"{'='*80}\n", flush=True)
         sys.stdout.flush()
 
-        # 8. Return in OpenAI format (Typesense expects this)
+        # 10. Return in OpenAI format (Typesense expects this)
         return openai_response
 
     except ValueError as e:
@@ -643,10 +760,18 @@ async def chat_completions(request: ChatCompletionRequest):
 
 @app.get("/stats")
 async def stats():
-    """Service statistics"""
+    """Service statistics including cache performance"""
     try:
         # Get collection stats
         collection_info = typesense_client.collections['mercedes_products'].retrieve()
+
+        # Get cache stats
+        cache_stats = {}
+        try:
+            cache = get_cache()
+            cache_stats = cache.metrics.get_stats()
+        except Exception as e:
+            cache_stats = {"error": str(e)}
 
         return {
             "collection": {
@@ -658,7 +783,8 @@ async def stats():
                 "version": "1.0.0",
                 "model": "gpt-4o-mini",
                 "retrieval_limit": 20
-            }
+            },
+            "cache": cache_stats
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching stats: {str(e)}")

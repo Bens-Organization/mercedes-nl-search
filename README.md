@@ -6,12 +6,15 @@ AI-powered natural language search for Mercedes Scientific products using **Type
 
 **Status**: ✅ **LIVE (v2.3.0)**
 
-- **Frontend**: [https://mercedes-nl-search.vercel.app](https://mercedes-nl-search.vercel.app)
-- **Backend API**: [https://mercedes-search-api.onrender.com](https://mercedes-search-api.onrender.com)
+- **Frontend**: [https://mercedes-nl-search.vercel.app](https://mercedes-nl-search.vercel.app) (Vercel)
+- **Backend API**: [https://mercedes-nl-search-production.up.railway.app](https://mercedes-nl-search-production.up.railway.app) (Railway)
+- **Backend API (Staging)**: [https://mercedes-nl-search-staging.up.railway.app](https://mercedes-nl-search-staging.up.railway.app) (Railway)
 - **Search Engine**: Typesense Cloud (8GB cluster)
-- **Middleware**: Railway (RAG processing)
+- **Middleware**: [https://web-production-a5d93.up.railway.app](https://web-production-a5d93.up.railway.app) (Railway)
 - **Database**: Neon PostgreSQL
 - **AI Models**: OpenAI GPT-4o-mini (RAG middleware) + text-embedding-3-small
+
+**Why Railway?** Backend migrated from Render to eliminate 30-50 second cold start delays caused by free tier inactivity timeout. See [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md).
 
 **Deployed Stack**: 34,607 products indexed with full semantic search, intelligent category classification, and synonym matching.
 
@@ -662,7 +665,7 @@ OPENAI_MODEL=gpt-4
 
 1. **Index incrementally**: For large catalogs, index in batches
 2. **Use CDN for images**: Cache product images
-3. **Cache frequent queries**: Add Redis for repeated searches
+3. **✅ LLM caching implemented**: Redis LangCache for semantic query caching (3-4x faster on cache hits) - See `docs/REDIS_CACHE_IMPLEMENTATION.md`
 4. **Pagination**: Use `per_page` parameter wisely
 5. **Monitoring**: Track query times and adjust k parameter
 
@@ -697,9 +700,9 @@ Contributions welcome! Please:
 
 ## Deployment
 
-This project is deployed in production. See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment instructions including:
+This project is deployed in production. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment instructions including:
 - Environment variables setup
-- Backend deployment (Render)
+- Backend deployment (Railway) - [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md)
 - Frontend deployment (Vercel)
 - Typesense configuration
 - Troubleshooting guide
@@ -725,4 +728,4 @@ MIT
 
 ---
 
-Built with Typesense, OpenAI, and Python • Deployed on Vercel + Render + Typesense Cloud
+Built with Typesense, OpenAI, and Python • Deployed on Vercel + Railway + Typesense Cloud

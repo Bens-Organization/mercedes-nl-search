@@ -60,6 +60,7 @@ class NeonProductIndexer:
                 },
                 {"name": "url_key", "type": "string"},
                 {"name": "stock_status", "type": "string", "facet": True},
+                {"name": "in_stock_priority", "type": "int32", "sort": True},  # 1=in stock, 0=out of stock (for sorting)
                 {"name": "product_type", "type": "string", "facet": True},
                 {"name": "description", "type": "string", "optional": True},
                 {"name": "short_description", "type": "string", "optional": True},
@@ -81,6 +82,8 @@ class NeonProductIndexer:
                 # Temporal fields for "latest" queries
                 {"name": "created_at", "type": "int64", "optional": True, "sort": True},
                 {"name": "updated_at", "type": "int64", "optional": True, "sort": True},
+                # Restriction field for access control
+                {"name": "restricted_class", "type": "string", "facet": True, "optional": True},
                 # Embedding field for semantic search (now includes brand, size, color)
                 {
                     "name": "embedding",
@@ -162,9 +165,8 @@ class NeonProductIndexer:
                         MAX(is_in_stock) as is_in_stock
                     FROM catalog_products
                     WHERE (store_view_code IS NULL OR store_view_code = 'mercedesscientific')
-                      AND is_in_stock = '1'
-                      AND product_online = '1'  -- Exclude sample/hidden products (product_online=2)
                       AND sku IS NOT NULL
+                      AND product_online = '1'
                     GROUP BY sku
                 )
                 SELECT
@@ -253,39 +255,182 @@ class NeonProductIndexer:
             print(f"✗ Error fetching from Neon: {e}")
             raise
 
-    def _calculate_brand_priority(self, brand: str, product_name: str = None) -> int:
+    def _detect_category_type(self, categories: List[str]) -> str:
         """
-        Calculate brand priority for sorting.
+        Detect the category type for brand ranking.
 
-        In-house brands (Mercedes Scientific, Tanner Scientific) get highest priority.
-        Checks both brand field AND product name for brand detection.
+        Returns:
+            - "lcms_hplc" for LCMS/HPLC Solvents
+            - "drug_testing" for Drug Testing products
+            - "general" for all other products
+        """
+        if not categories:
+            return "general"
+
+        # Check categories for LCMS/HPLC indicators
+        for cat in categories:
+            cat_lower = cat.lower()
+            # Check for LCMS/HPLC grade indicators
+            if any(grade in cat for grade in ["Grade: HPLC", "Grade: LCMS", "Grade: Ultra HPLC"]):
+                return "lcms_hplc"
+            # Check for Drug Testing category
+            if "drug test" in cat_lower:
+                return "drug_testing"
+
+        return "general"
+
+    def _detect_brand(self, sku: str, brand_field: str, product_name: str) -> str:
+        """
+        Detect brand from multiple sources.
+
+        Priority:
+        1. SKU prefix (most reliable)
+        2. Brand field
+        3. Product name
+
+        Returns:
+            Normalized brand name in lowercase, or None if no brand detected
+        """
+        sku_upper = (sku or "").upper().strip()
+        brand_lower = (brand_field or "").lower().strip()
+        name_lower = (product_name or "").lower().strip()
+
+        # Check SKU prefix first (most reliable)
+        if sku_upper.startswith("TBK"):
+            return "concord technologies"
+        elif sku_upper.startswith("BIR"):
+            return "birch biotech"
+        elif sku_upper.startswith("MER"):
+            return "mercedes scientific"
+        elif sku_upper.startswith("ALT"):
+            return "alltest"
+        elif sku_upper.startswith("TNR"):
+            return "tanner scientific"
+        elif sku_upper.startswith("HGS"):
+            return "healgen"
+        elif sku_upper.startswith("WON"):
+            return "wondfo"
+
+        # Check brand field (good for most products)
+        if "concord" in brand_lower and "technology" in brand_lower:
+            return "concord technologies"
+        elif "birch" in brand_lower and "biotech" in brand_lower:
+            return "birch biotech"
+        elif "mercedes scientific" in brand_lower:
+            return "mercedes scientific"
+        elif "alltest" in brand_lower:
+            return "alltest"
+        elif "tanner scientific" in brand_lower:
+            return "tanner scientific"
+        elif "healgen" in brand_lower:
+            return "healgen"
+        elif "wondfo" in brand_lower:
+            return "wondfo"
+
+        # Check product name (fallback)
+        if "mercedes scientific" in name_lower:
+            return "mercedes scientific"
+        elif "tanner scientific" in name_lower:
+            return "tanner scientific"
+        elif "concord" in name_lower:
+            return "concord technologies"
+        elif "birch" in name_lower and "biotech" in name_lower:
+            return "birch biotech"
+        elif "alltest" in name_lower:
+            return "alltest"
+        elif "healgen" in name_lower:
+            return "healgen"
+        elif "wondfo" in name_lower:
+            return "wondfo"
+
+        # Return original brand field if available
+        return brand_field if brand_field else None
+
+    def _calculate_brand_priority(self, sku: str, brand: str, product_name: str, categories: List[str]) -> int:
+        """
+        Calculate brand priority for sorting based on category and brand.
+
+        Priority structure varies by category:
+
+        **LCMS/HPLC Solvents** (detected by Grade: HPLC/LCMS in categories):
+            100 - Concord Technologies (TBK prefix)
+            90  - Birch Biotech (BIR prefix)
+            80  - Mercedes Scientific (MER prefix)
+            70  - Tanner Scientific (TNR prefix)
+            50  - Other brands
+            0   - No brand
+
+        **Drug Testing** (detected by "Drug Test" in categories):
+            100 - Mercedes Scientific (MER prefix)
+            90  - AllTest (ALT prefix)
+            80  - Tanner Scientific (TNR prefix)
+            70  - Healgen (HGS prefix)
+            60  - Wondfo (WON prefix)
+            50  - Other brands
+            0   - No brand
+
+        **General** (all other categories):
+            100 - Mercedes Scientific
+            90  - Tanner Scientific
+            50  - Other brands
+            0   - No brand
 
         Args:
+            sku: Product SKU (used for prefix detection)
             brand: Brand name from additional_attributes
-            product_name: Product name (optional, used as fallback)
+            product_name: Product name (used as fallback)
+            categories: List of category paths
 
         Returns:
             Priority score (higher = more important)
-            - 100: Mercedes Scientific
-            - 90: Tanner Scientific
-            - 50: Other brands
-            - 0: No brand
         """
-        # Check brand field first
-        brand_lower = (brand or "").lower().strip()
-        name_lower = (product_name or "").lower().strip()
+        # Detect category type
+        category_type = self._detect_category_type(categories)
 
-        # In-house brands (highest priority)
-        # Check both brand field and product name
-        if "mercedes scientific" in brand_lower or "mercedes scientific" in name_lower:
-            return 100
-        elif "tanner scientific" in brand_lower or "tanner scientific" in name_lower:
-            return 90
-        elif brand:  # Has brand field but not in-house
-            return 50
-        else:
-            # No brand
+        # Detect brand from multiple sources
+        detected_brand = self._detect_brand(sku, brand, product_name)
+
+        if not detected_brand:
             return 0
+
+        brand_lower = detected_brand.lower()
+
+        # LCMS/HPLC Solvents category
+        if category_type == "lcms_hplc":
+            if brand_lower == "concord technologies":
+                return 100
+            elif brand_lower == "birch biotech":
+                return 90
+            elif brand_lower == "mercedes scientific":
+                return 80
+            elif brand_lower == "tanner scientific":
+                return 70
+            else:
+                return 50
+
+        # Drug Testing category
+        elif category_type == "drug_testing":
+            if brand_lower == "mercedes scientific":
+                return 100
+            elif brand_lower == "alltest":
+                return 90
+            elif brand_lower == "tanner scientific":
+                return 80
+            elif brand_lower == "healgen":
+                return 70
+            elif brand_lower == "wondfo":
+                return 60
+            else:
+                return 50
+
+        # General (all other categories)
+        else:
+            if brand_lower == "mercedes scientific":
+                return 100
+            elif brand_lower == "tanner scientific":
+                return 90
+            else:
+                return 50 if detected_brand else 0
 
     def _clean_and_deduplicate_categories(self, raw_categories: List[str]) -> List[str]:
         """
@@ -422,8 +567,11 @@ class NeonProductIndexer:
 
             short_desc_clean = self._clean_html(short_description) if short_description else None
 
-            # Map stock status
-            stock_status = "IN_STOCK" if is_in_stock == '1' else "OUT_OF_STOCK"
+            # Map stock status based on actual quantity (not is_in_stock flag)
+            # qty > 0 means actually in stock, regardless of is_in_stock flag
+            stock_status = "IN_STOCK" if (qty and float(qty) > 0) else "OUT_OF_STOCK"
+            # Priority for sorting: in-stock products appear first
+            in_stock_priority = 1 if stock_status == "IN_STOCK" else 0
 
             # Build image URL
             image_url = None
@@ -450,8 +598,8 @@ class NeonProductIndexer:
                 except:
                     pass
 
-            # Calculate brand priority (check both brand field and product name)
-            brand_priority = self._calculate_brand_priority(specs.get('brand'), name)
+            # Calculate brand priority (category-aware, checks SKU prefix, brand field, and product name)
+            brand_priority = self._calculate_brand_priority(sku, specs.get('brand'), name, category_list)
 
             return {
                 "product_id": sku,  # Use SKU as product_id
@@ -461,6 +609,7 @@ class NeonProductIndexer:
                 "name_normalized": self._normalize_name(name),  # Split camelCase + keep spaces for tokens
                 "url_key": url_key or "",
                 "stock_status": stock_status,
+                "in_stock_priority": in_stock_priority,
                 "product_type": product_type or "simple",
                 "description": description_clean,
                 "short_description": short_desc_clean,
@@ -482,6 +631,8 @@ class NeonProductIndexer:
                 # Temporal fields
                 "created_at": created_ts,
                 "updated_at": updated_ts,
+                # Restriction field for access control
+                "restricted_class": specs.get('restricted_class'),
             }
 
         except Exception as e:
@@ -526,7 +677,7 @@ class NeonProductIndexer:
                 value = value.strip()
 
                 # Extract important specs
-                if key in ['brand', 'grade', 'size', 'color', 'physical_form', 'cas_number', 'type_attribute']:
+                if key in ['brand', 'grade', 'size', 'color', 'physical_form', 'cas_number', 'type_attribute', 'restricted_class']:
                     # Clean value (remove quotes, braces for simple values)
                     if value.startswith('{') or value.startswith('['):
                         continue  # Skip complex nested values
