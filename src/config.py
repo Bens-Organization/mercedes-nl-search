@@ -19,7 +19,7 @@ class Config:
     TYPESENSE_PORT = int(os.getenv("TYPESENSE_PORT", "8108"))
     TYPESENSE_PROTOCOL = os.getenv("TYPESENSE_PROTOCOL", "http")
     TYPESENSE_API_KEY = os.getenv("TYPESENSE_API_KEY")
-    TYPESENSE_COLLECTION_NAME = "mercedes_products"
+    TYPESENSE_COLLECTION_NAME = os.getenv("TYPESENSE_COLLECTION_NAME","mercedes_products")
 
     # Mercedes GraphQL
     MERCEDES_GRAPHQL_URL = os.getenv(
