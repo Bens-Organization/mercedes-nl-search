@@ -79,6 +79,7 @@ class MagentoProductIndexer:
                 },
                 {"name": "url_key", "type": "string"},
                 {"name": "stock_status", "type": "string", "facet": True},
+                {"name": "in_stock_priority", "type": "int32", "sort": True},  # 1=in stock, 0=out of stock (for sorting)
                 {"name": "product_type", "type": "string", "facet": True},
                 {"name": "description", "type": "string", "optional": True},
                 {"name": "short_description", "type": "string", "optional": True},
@@ -100,6 +101,8 @@ class MagentoProductIndexer:
                 # Temporal fields
                 {"name": "created_at", "type": "int64", "optional": True, "sort": True},
                 {"name": "updated_at", "type": "int64", "optional": True, "sort": True},
+                # Restriction field for access control
+                {"name": "restricted_class", "type": "string", "facet": True, "optional": True},
                 # Embedding field for semantic search
                 {
                     "name": "embedding",
@@ -549,6 +552,9 @@ class MagentoProductIndexer:
             # Brand priority
             brand_priority = self._calculate_brand_priority(brand, name)
 
+            # In-stock priority for sorting (in-stock products appear first)
+            in_stock_priority = 1 if stock_status == "IN_STOCK" else 0
+
             return {
                 "product_id": str(entity_id),
                 "sku": sku,
@@ -557,6 +563,7 @@ class MagentoProductIndexer:
                 "name_normalized": self._normalize_name(name),
                 "url_key": url_key or "",
                 "stock_status": stock_status,
+                "in_stock_priority": in_stock_priority,
                 "product_type": type_id or "simple",
                 "description": description_clean,
                 "short_description": short_desc_clean,
@@ -575,6 +582,8 @@ class MagentoProductIndexer:
                 "weight": float(weight) if weight else None,
                 "created_at": created_ts,
                 "updated_at": updated_ts,
+                # Restriction field (Magento doesn't have this, so set to None)
+                "restricted_class": None,
             }
 
         except Exception as e:
