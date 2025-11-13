@@ -2,7 +2,7 @@
 import { useState, FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 import Heading from '@/components/Heading';
-import Form from '@/components/Form';
+import { PlaceholdersAndVanishInput } from '@/components/ui/placeholders-and-vanish-input';
 import ProductListItem from '@/components/ProductListItem';
 
 interface Product {
@@ -38,6 +38,7 @@ export default function Home() {
   const [hasSearched, setHasSearched] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [hoveredExampleIndex, setHoveredExampleIndex] = useState<number | undefined>(undefined);
 
   const exampleQueries = [
     'Gloves in stock under $50',
@@ -144,6 +145,7 @@ export default function Home() {
   };
 
   const handleExampleClick = (example: string) => {
+    setQuery(example);
     handleSearch(example);
   };
 
@@ -165,12 +167,11 @@ export default function Home() {
 
         {/* Search Section */}
         <div className="w-full mb-8">
-          <Form
-            query={query}
-            setQuery={setQuery}
+          <PlaceholdersAndVanishInput
+            placeholders={exampleQueries}
+            onChange={(e) => setQuery(e.target.value)}
             onSubmit={handleSubmit}
-            placeholder="Type in the product specification, e.g. nitrile gloves, powder-free, under $50..."
-            autoFocus
+            currentPlaceholderIndex={hoveredExampleIndex}
           />
         </div>
 
@@ -184,6 +185,8 @@ export default function Home() {
               <li
                 key={index}
                 onClick={() => handleExampleClick(example)}
+                onMouseEnter={() => setHoveredExampleIndex(index)}
+                onMouseLeave={() => setHoveredExampleIndex(undefined)}
                 className="w-full py-2.5 px-3 border border-gray-200 rounded-lg cursor-pointer hover:border-journey-teal hover:bg-gray-50 transition"
               >
                 {example}
@@ -202,11 +205,11 @@ export default function Home() {
 
       {/* Search Bar */}
       <div className="w-full mb-4">
-        <Form
-          query={query}
-          setQuery={setQuery}
+        <PlaceholdersAndVanishInput
+          placeholders={exampleQueries}
+          onChange={(e) => setQuery(e.target.value)}
           onSubmit={handleSubmit}
-          placeholder="Type in the product specification, e.g. nitrile gloves, powder-free, under $50..."
+          currentPlaceholderIndex={hoveredExampleIndex}
         />
       </div>
 
