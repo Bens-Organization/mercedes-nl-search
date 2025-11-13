@@ -643,6 +643,83 @@ class MagentoProductIndexer:
             print(f"⚠ Failed to index: {failed_count} products")
         print(f"{'='*60}")
 
+    def update_single_product(self, product_id: int) -> bool:
+        """
+        Update a single product in Typesense (for webhook use).
+
+        Args:
+            product_id: Magento product entity_id
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"\n{'='*60}")
+        print(f"[WEBHOOK] Updating product ID {product_id}...")
+        print(f"{'='*60}")
+
+        try:
+            # Connect to MySQL
+            conn = mysql.connector.connect(
+                host=self.mysql_host,
+                port=self.mysql_port,
+                database=self.mysql_database,
+                user=self.mysql_user,
+                password=self.mysql_password
+            )
+            cursor = conn.cursor()
+
+            # Get attribute IDs
+            print("[WEBHOOK] Discovering Magento attribute IDs...")
+            attribute_ids = self._get_attribute_ids(cursor)
+
+            # Build query for single product
+            query = self._build_product_query(attribute_ids, limit=None)
+            query += f" AND e.entity_id = {product_id}"
+
+            print(f"[WEBHOOK] Fetching product data...")
+            cursor.execute(query)
+            row = cursor.fetchone()
+
+            if row:
+                print(f"[WEBHOOK] Transforming product data...")
+                product = self._transform_magento_product(row, attribute_ids)
+
+                if product:
+                    print(f"[WEBHOOK] Upserting to Typesense collection: {self.collection_name}")
+                    # Upsert to Typesense (update if exists, insert if new)
+                    self.typesense_client.collections[self.collection_name].documents.upsert(product)
+
+                    print(f"\n{'='*60}")
+                    print(f"[WEBHOOK] ✓ Successfully updated product:")
+                    print(f"[WEBHOOK]   SKU: {product['sku']}")
+                    print(f"[WEBHOOK]   Name: {product['name']}")
+                    print(f"[WEBHOOK]   Price: ${product['price']}")
+                    print(f"[WEBHOOK]   Stock: {product['stock_status']}")
+                    print(f"{'='*60}")
+
+                    cursor.close()
+                    conn.close()
+                    return True
+                else:
+                    print(f"[WEBHOOK] ✗ Failed to transform product data")
+                    cursor.close()
+                    conn.close()
+                    return False
+            else:
+                print(f"[WEBHOOK] ✗ Product ID {product_id} not found in database")
+                print(f"[WEBHOOK]   (It may be disabled or not visible)")
+                cursor.close()
+                conn.close()
+                return False
+
+        except Exception as e:
+            print(f"\n{'='*60}")
+            print(f"[WEBHOOK] ✗ Error updating product: {e}")
+            print(f"{'='*60}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def run(self, max_products: int = None):
         """Run the complete indexing process."""
         print("=" * 60)
