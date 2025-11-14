@@ -177,6 +177,11 @@ class MagentoProductIndexer:
             attribute_ids = self._get_attribute_ids(cursor)
             print(f"✓ Found {len(attribute_ids)} product attributes")
 
+            # Build category path cache first (for fast lookups)
+            print("\n⏳ Building category path cache...")
+            category_paths = self._build_category_path_cache(cursor)
+            print(f"✓ Cached {len(category_paths)} category paths")
+
             # Build query to fetch products from EAV structure
             # This is complex because Magento stores attributes across multiple tables
             query = self._build_product_query(attribute_ids, limit)
@@ -198,7 +203,7 @@ class MagentoProductIndexer:
             products = []
 
             for row in cursor.fetchall():
-                product = self._transform_magento_product(row, attribute_ids)
+                product = self._transform_magento_product(row, attribute_ids, category_paths)
                 if product:
                     products.append(product)
 
@@ -214,6 +219,67 @@ class MagentoProductIndexer:
         except Exception as e:
             print(f"✗ Error fetching from Magento: {e}")
             raise
+
+    def _build_category_path_cache(self, cursor) -> Dict[int, str]:
+        """
+        Build a cache of category_id -> full_path_string.
+
+        This avoids N+1 queries when resolving category paths for products.
+        Returns a dict like {15: "Products/Gloves & Apparel/Gloves", ...}
+        """
+        # Get category name attribute ID
+        cursor.execute("""
+            SELECT attribute_id
+            FROM eav_attribute
+            WHERE entity_type_id = (
+                SELECT entity_type_id
+                FROM eav_entity_type
+                WHERE entity_type_code = 'catalog_category'
+            )
+            AND attribute_code = 'name'
+        """)
+        name_attr_result = cursor.fetchone()
+        if not name_attr_result:
+            return {}
+        name_attr_id = name_attr_result[0]
+
+        # Fetch all categories with their paths and names
+        cursor.execute("""
+            SELECT
+                e.entity_id,
+                e.path,
+                v.value as name
+            FROM catalog_category_entity e
+            LEFT JOIN catalog_category_entity_varchar v
+                ON e.entity_id = v.entity_id
+                AND v.attribute_id = %s
+                AND v.store_id = 0
+            WHERE e.level > 1  -- Skip root and base categories
+        """, (name_attr_id,))
+
+        category_data = {}
+        for entity_id, path, name in cursor.fetchall():
+            if name:
+                category_data[entity_id] = {
+                    'name': name,
+                    'path': path  # e.g., "1/2/15/23"
+                }
+
+        # Build full path strings by traversing the hierarchy
+        category_paths = {}
+        for cat_id, data in category_data.items():
+            path_ids = [int(x) for x in data['path'].split('/')]
+            # Build full path by concatenating parent names
+            path_names = []
+            for pid in path_ids:
+                if pid in category_data:
+                    path_names.append(category_data[pid]['name'])
+
+            if path_names:
+                # Join with '/' to create full path
+                category_paths[cat_id] = '/'.join(path_names)
+
+        return category_paths
 
     def _get_attribute_ids(self, cursor) -> Dict[str, int]:
         """
@@ -313,7 +379,10 @@ class MagentoProductIndexer:
                 size_attr.value as size,
                 color_attr.value as color,
                 physical_form_attr.value as physical_form,
-                cas_attr.value as cas_number
+                cas_attr.value as cas_number,
+
+                -- Categories (aggregated category IDs for later resolution)
+                GROUP_CONCAT(DISTINCT cat_prod.category_id SEPARATOR ',') as category_ids
 
             FROM catalog_product_entity e
 
@@ -398,8 +467,20 @@ class MagentoProductIndexer:
                 AND cas_attr.attribute_id = {cas_number_id}
                 AND cas_attr.store_id = 0
 
+            -- Categories (just get IDs, we'll resolve paths later using cache)
+            LEFT JOIN catalog_category_product cat_prod
+                ON e.entity_id = cat_prod.product_id
+
             WHERE status_attr.value = 1  -- Only enabled products
             AND visibility_attr.value IN (2, 3, 4)  -- Catalog, Search, Both (not "Not Visible Individually")
+
+            GROUP BY e.entity_id, e.sku, e.type_id, e.created_at, e.updated_at,
+                     name_attr.value, url_attr.value, desc_attr.value, short_desc_attr.value,
+                     price_attr.value, special_price_attr.value, image_attr.value,
+                     weight_attr.value, status_attr.value, visibility_attr.value,
+                     stock.is_in_stock, stock.qty,
+                     brand_attr.value, size_attr.value, color_attr.value,
+                     physical_form_attr.value, cas_attr.value
         """
 
         # Format with attribute IDs
@@ -469,6 +550,57 @@ class MagentoProductIndexer:
 
         return categories
 
+    def _clean_and_deduplicate_categories(self, raw_categories: List[str]) -> List[str]:
+        """
+        Clean and deduplicate category paths (same logic as Neon indexer).
+
+        Removes "Root Catalog / Mercedes Scientific Main Store / " prefix and deduplicates
+        categories that have the same end path. Prefers shorter, more direct paths.
+        """
+        if not raw_categories:
+            return []
+
+        # Step 1: Clean category paths by removing prefixes
+        cleaned = []
+        for cat in raw_categories:
+            # Remove prefixes
+            cleaned_cat = cat.replace("Root Catalog / Mercedes Scientific Main Store / ", "")
+            cleaned_cat = cleaned_cat.replace("Mercedes Scientific Main Store / ", "")
+            cleaned_cat = cleaned_cat.replace("Root Catalog / ", "")
+            if cleaned_cat:
+                cleaned.append(cleaned_cat)
+
+        # Step 2: Deduplicate by end path (last 2 segments)
+        seen_end_paths = {}
+        unique_categories = []
+
+        for cat in cleaned:
+            parts = cat.split(' / ')
+
+            # Consider the last 2 segments as the "end path"
+            if len(parts) >= 2:
+                end_path = ' / '.join(parts[-2:])
+            else:
+                end_path = cat
+
+            # If we haven't seen this end path, or if this is a shorter path, keep it
+            if end_path not in seen_end_paths:
+                seen_end_paths[end_path] = cat
+                unique_categories.append(cat)
+            else:
+                # If this path is shorter, replace the existing one
+                existing = seen_end_paths[end_path]
+                if len(cat) < len(existing):
+                    if existing in unique_categories:
+                        unique_categories.remove(existing)
+                    seen_end_paths[end_path] = cat
+                    unique_categories.append(cat)
+
+        # Step 3: Sort to have "Products" paths first
+        unique_categories.sort(key=lambda x: (not x.startswith('Products / '), len(x), x))
+
+        return unique_categories
+
     def _normalize_sku(self, text: str) -> str:
         """Normalize SKU (same as Neon indexer)."""
         if not text:
@@ -509,13 +641,13 @@ class MagentoProductIndexer:
         clean = clean.strip()
         return clean[:500] if len(clean) > 500 else clean
 
-    def _transform_magento_product(self, row, attribute_ids: Dict[str, int]) -> Dict[str, Any]:
+    def _transform_magento_product(self, row, attribute_ids: Dict[str, int], category_paths: Dict[int, str]) -> Dict[str, Any]:
         """Transform Magento database row to Typesense document."""
         try:
             (entity_id, sku, type_id, created_at, updated_at,
              name, url_key, description, short_description,
              price, special_price, image, weight, status, visibility,
-             is_in_stock, qty, brand, size, color, physical_form, cas_number) = row
+             is_in_stock, qty, brand, size, color, physical_form, cas_number, category_ids) = row
 
             # Stock status
             stock_status = "IN_STOCK" if is_in_stock == 1 else "OUT_OF_STOCK"
@@ -545,9 +677,20 @@ class MagentoProductIndexer:
                 except:
                     pass
 
-            # Categories (fetch separately due to complexity)
-            # For now, use empty list - you can implement category fetching later
-            categories = []
+            # Parse category IDs and resolve to full paths
+            raw_category_list = []
+            if category_ids:
+                # Split comma-separated IDs and resolve each to full path
+                for cat_id_str in category_ids.split(','):
+                    try:
+                        cat_id = int(cat_id_str.strip())
+                        if cat_id in category_paths:
+                            raw_category_list.append(category_paths[cat_id])
+                    except (ValueError, AttributeError):
+                        pass  # Skip invalid IDs
+
+            # Clean and deduplicate categories
+            category_list = self._clean_and_deduplicate_categories(raw_category_list)
 
             # Brand priority
             brand_priority = self._calculate_brand_priority(brand, name)
@@ -571,7 +714,7 @@ class MagentoProductIndexer:
                 "special_price": float(special_price) if special_price else None,
                 "currency": "USD",
                 "image_url": image_url,
-                "categories": categories,
+                "categories": category_list,
                 "brand": brand,
                 "brand_priority": brand_priority,
                 "size": size,
