@@ -29,9 +29,12 @@ interface SearchStats {
 }
 
 export default function Home() {
-  // Check if we should show debug info (hide in demo/production environments)
-  const environment = process.env.NEXT_PUBLIC_ENVIRONMENT || 'development';
-  const shouldShowDebugInfo = environment === 'development';
+  // Check if we should show debug info
+  // Only show if explicitly set to 'development' OR running on localhost
+  const environment = process.env.NEXT_PUBLIC_ENVIRONMENT;
+  const isLocalhost = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const shouldShowDebugInfo = environment === 'development' || isLocalhost;
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Product[]>([]);
