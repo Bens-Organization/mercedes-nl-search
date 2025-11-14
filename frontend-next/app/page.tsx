@@ -29,6 +29,10 @@ interface SearchStats {
 }
 
 export default function Home() {
+  // Check if we should show debug info (hide in demo/production environments)
+  const environment = process.env.NEXT_PUBLIC_ENVIRONMENT || 'development';
+  const shouldShowDebugInfo = environment === 'development';
+
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,9 +74,6 @@ export default function Home() {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-      // Enable debug mode in local development
-      const isLocalDevelopment = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
-
       let response;
 
       try {
@@ -84,7 +85,7 @@ export default function Home() {
           body: JSON.stringify({
             query: searchQuery,
             max_results: 20 * pageNum,
-            debug: isLocalDevelopment, // Enable debug in local development
+            debug: shouldShowDebugInfo, // Enable debug in development environment
           }),
         });
       } catch (fetchError) {
@@ -215,8 +216,8 @@ export default function Home() {
         />
       </div>
 
-      {/* Parsed Query Display */}
-      {stats && !loading && (
+      {/* Parsed Query Display - only show in development */}
+      {shouldShowDebugInfo && stats && !loading && (
         <pre className="text-xs mb-4 block max-w-full overflow-auto w-full">
           {(() => {
             // Display middleware-extracted query and filters
@@ -273,7 +274,7 @@ export default function Home() {
       {/* Results Count */}
       {stats && !loading && !error && (
         <div className="self-start mb-2 w-full">
-          Found {stats.total.toLocaleString()} result{stats.total !== 1 ? 's' : ''} in {stats.queryTime.toFixed(0)}ms.
+          Found {stats.total.toLocaleString()} result{stats.total !== 1 ? 's' : ''}{shouldShowDebugInfo && ` in ${stats.queryTime.toFixed(0)}ms`}.
         </div>
       )}
 
