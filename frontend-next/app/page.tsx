@@ -276,8 +276,8 @@ export default function Home() {
 
       {/* Results Count */}
       {stats && !loading && !error && (
-        <div className="self-start mb-2 w-full">
-          Found {stats.total.toLocaleString()} result{stats.total !== 1 ? 's' : ''}{shouldShowDebugInfo && ` in ${stats.queryTime.toFixed(0)}ms`}.
+        <div className="self-start mb-2 w-full text-sm text-gray-600">
+          Showing {stats.total.toLocaleString()} {stats.total === 1 ? 'product' : 'products'}{shouldShowDebugInfo && ` (${stats.queryTime.toFixed(0)}ms)`}
         </div>
       )}
 
