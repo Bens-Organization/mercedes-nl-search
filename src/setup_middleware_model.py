@@ -4,6 +4,31 @@ This script registers the middleware as an NL model with Typesense.
 The middleware provides RAG-based category classification + filter extraction.
 
 Must be run before using nl_query=true with middleware integration.
+
+IMPORTANT: Models are registered PER COLLECTION, not per environment.
+Multiple environments can share the same model if they use the same collection.
+
+Usage:
+    # Register default model (uses TYPESENSE_COLLECTION_NAME from env)
+    python src/setup_middleware_model.py
+
+    # Register model for specific collection
+    python src/setup_middleware_model.py mercedes_products
+    python src/setup_middleware_model.py mercedes_magento
+
+    # Check model status
+    python src/setup_middleware_model.py check
+    python src/setup_middleware_model.py check mercedes_products
+
+Example Setup:
+    # Register one model per unique collection
+    python src/setup_middleware_model.py mercedes_products
+    python src/setup_middleware_model.py mercedes_magento
+
+    # Multiple backends can share models:
+    # - Staging backend: NL_MODEL_ID=middleware-rag-mercedes_products
+    # - Demo backend: NL_MODEL_ID=middleware-rag-mercedes_magento
+    # - Production backend: NL_MODEL_ID=middleware-rag-mercedes_products (shares with staging!)
 """
 import typesense
 import requests
@@ -16,37 +41,57 @@ Config.validate()
 MIDDLEWARE_URL = "https://web-production-a5d93.up.railway.app"
 
 
-def setup_middleware_model():
-    """Register middleware as NL search model with Typesense."""
+def setup_middleware_model(collection_name: str = None):
+    """Register middleware as NL search model with Typesense.
 
+    Models are registered PER COLLECTION (not per environment).
+    Multiple environments using the same collection can share one model.
+
+    Args:
+        collection_name: Typesense collection name (e.g., 'mercedes_products', 'mercedes_magento')
+                         If not specified, uses Config.TYPESENSE_COLLECTION_NAME
+    """
     # Build Typesense URL
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
 
+    # Use provided collection or fall back to config
+    if collection_name is None:
+        collection_name = Config.TYPESENSE_COLLECTION_NAME
+
+    # Build model ID based on collection name
+    # This ensures one model per collection (not per environment)
+    model_id = f"middleware-rag-{collection_name}"
+
+    # Build API URL with collection parameter
+    api_url = f"{MIDDLEWARE_URL}/v1/chat/completions?collection={collection_name}"
+
     # Model configuration pointing to middleware (using vLLM provider)
-    model_id = "middleware-rag-vllm"
     model_config = {
         "id": model_id,
         "model_name": "vllm/gpt-4o-mini",  # Use vLLM provider for custom endpoint
-        "api_url": f"{MIDDLEWARE_URL}/v1/chat/completions",  # Full endpoint URL
+        "api_url": api_url,  # Full endpoint URL with collection param
         "api_key": "dummy-key",  # Not validated by middleware
         "max_bytes": 16000,
         "temperature": 0.0,
     }
 
-    print("=" * 60)
+    print("=" * 70)
     print("Setting up Middleware Model for Typesense NL Search")
-    print("=" * 60)
+    print("=" * 70)
     print(f"Typesense URL: {base_url}")
     print(f"Middleware URL: {MIDDLEWARE_URL}")
     print(f"Model ID: {model_id}")
     print(f"Model Name: {model_config['model_name']}")
-    print("=" * 60)
+    print(f"Collection: {collection_name}")
+    print(f"API URL: {api_url}")
+    print("=" * 70)
     print("\nHow this works:")
     print("  1. Typesense sends query to middleware (not OpenAI)")
-    print("  2. Middleware runs RAG classification")
-    print("  3. Middleware returns {q, filter_by} with category")
-    print("  4. Typesense parses and executes search")
-    print("=" * 60)
+    print("  2. Middleware retrieves products from specified collection")
+    print("  3. Middleware runs RAG classification")
+    print("  4. Middleware returns {q, filter_by} with category")
+    print("  5. Typesense parses and executes search")
+    print("=" * 70)
 
     headers = {
         "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
@@ -114,10 +159,21 @@ def setup_middleware_model():
         raise
 
 
-def check_model_status():
-    """Check if middleware model exists and is configured."""
+def check_model_status(collection_name: str = None):
+    """Check if middleware model exists and is configured.
+
+    Args:
+        collection_name: Collection name (e.g., 'mercedes_products', 'mercedes_magento')
+                         If not specified, uses Config.TYPESENSE_COLLECTION_NAME
+    """
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
-    model_id = "middleware-rag-vllm"
+
+    # Use provided collection or fall back to config
+    if collection_name is None:
+        collection_name = Config.TYPESENSE_COLLECTION_NAME
+
+    # Build model ID based on collection name
+    model_id = f"middleware-rag-{collection_name}"
 
     headers = {
         "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
@@ -135,6 +191,11 @@ def check_model_status():
             print(f"  - Model: {model.get('model_name')}")
             print(f"  - API URL: {model.get('api_url', 'N/A')}")
             print(f"  - Temperature: {model.get('temperature')}")
+            # Extract collection from API URL
+            api_url = model.get('api_url', '')
+            if 'collection=' in api_url:
+                collection = api_url.split('collection=')[1].split('&')[0]
+                print(f"  - Collection: {collection}")
             return True
         else:
             print(f"\n✗ Model '{model_id}' does not exist")
@@ -149,9 +210,27 @@ def check_model_status():
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) > 1 and sys.argv[1] == "check":
-        # Check if model exists
-        check_model_status()
+    # Parse command-line arguments
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+
+        if command == "check":
+            # Check model status for collection
+            collection_name = sys.argv[2] if len(sys.argv) > 2 else None
+            check_model_status(collection_name)
+        else:
+            # Setup model for collection
+            collection_name = sys.argv[1]
+            setup_middleware_model(collection_name)
     else:
-        # Setup the model
+        # Default: setup model with config values
+        print("\nUsage:")
+        print("  python src/setup_middleware_model.py                    # Default (from env)")
+        print("  python src/setup_middleware_model.py mercedes_products  # For specific collection")
+        print("  python src/setup_middleware_model.py mercedes_magento   # For another collection")
+        print("  python src/setup_middleware_model.py check              # Check default")
+        print("  python src/setup_middleware_model.py check mercedes_products  # Check specific")
+        print("\nIMPORTANT: One model per collection (not per environment)")
+        print("Multiple environments can share the same model if they use the same collection.")
+        print("\nSetting up default model...\n")
         setup_middleware_model()

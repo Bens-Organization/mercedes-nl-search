@@ -147,7 +147,7 @@ class Search:
             "query_by_weights": "100,100,150,4,4,3,3,1",  # Boost size field (150) for exact matches
             "per_page": fetch_results,  # Fetch more if size pattern detected
             "nl_query": True,  # Enable natural language processing
-            "nl_model_id": "middleware-rag-vllm",  # Use our vLLM middleware model
+            "nl_model_id": Config.NL_MODEL_ID,  # Use configured NL model (environment-specific)
             "prefix": "true,true,false,true,true,false,false,false",  # Disable prefix for size (exact match)
             "num_typos": 2,
             "typo_tokens_threshold": 1,
@@ -164,7 +164,7 @@ class Search:
             search_params["nl_query_debug"] = True
 
         print(f"[Typesense NL] Searching with query: '{query}'")
-        print(f"[Typesense NL] NL Model: middleware-rag-vllm")
+        print(f"[Typesense NL] NL Model: {Config.NL_MODEL_ID}")
         print(f"[Typesense NL] DEBUG - Search params: {search_params}")
 
         # Execute search
@@ -224,7 +224,7 @@ class Search:
         typesense_query = {
             "approach": "typesense_nl",
             "original_query": query,
-            "nl_model_id": "middleware-rag-vllm",
+            "nl_model_id": Config.NL_MODEL_ID,
             "middleware_url": "https://web-production-a5d93.up.railway.app",
             "results_found": total_found,
             "results_returned": len(products),  # Updated count after size filtering

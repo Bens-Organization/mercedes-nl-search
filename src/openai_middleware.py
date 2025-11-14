@@ -139,13 +139,22 @@ def extract_schema_info(messages: List[ChatMessage]) -> Dict[str, Any]:
     return {"system_prompt": "", "has_schema": False}
 
 
-async def retrieve_products(query: str, limit: int = 20) -> List[Dict[str, Any]]:
+async def retrieve_products(query: str, limit: int = 20, collection_name: str = None) -> List[Dict[str, Any]]:
     """
     Run retrieval search against Typesense to get relevant products.
     This search does NOT include category filters yet.
 
     For validation/test queries, returns empty list to avoid circular dependency.
+
+    Args:
+        query: Search query
+        limit: Max number of products to retrieve
+        collection_name: Typesense collection to search (defaults to env var or 'mercedes_products')
     """
+    # Use provided collection or fall back to env var or default
+    if collection_name is None:
+        collection_name = Config.TYPESENSE_COLLECTION_NAME
+
     # Detect validation queries (Typesense uses these during model registration)
     validation_patterns = ['test', 'validation', 'ping', 'hello', 'check']
     query_lower = query.lower().strip()
@@ -168,7 +177,8 @@ async def retrieve_products(query: str, limit: int = 20) -> List[Dict[str, Any]]
             "nl_query": False  # CRITICAL: Prevent circular dependency (boolean, not string)
         }
 
-        result = typesense_client.collections['mercedes_products'].documents.search(search_params)
+        print(f"[COLLECTION] Using collection: {collection_name}")
+        result = typesense_client.collections[collection_name].documents.search(search_params)
 
         products = []
         for hit in result.get('hits', []):
@@ -607,8 +617,8 @@ async def root():
 async def health():
     """Health check endpoint (supports GET and HEAD for UptimeRobot)"""
     try:
-        # Test Typesense connection
-        typesense_client.collections['mercedes_products'].retrieve()
+        # Test Typesense connection using default collection
+        typesense_client.collections[Config.TYPESENSE_COLLECTION_NAME].retrieve()
         typesense_status = "connected"
     except Exception as e:
         typesense_status = f"error: {str(e)}"
@@ -626,13 +636,14 @@ async def health():
     return {
         "status": "healthy",
         "typesense": typesense_status,
+        "collection": Config.TYPESENSE_COLLECTION_NAME,
         "cache": cache_status,
         "timestamp": datetime.utcnow().isoformat()
     }
 
 
 @app.post("/v1/chat/completions")
-async def chat_completions(request: ChatCompletionRequest):
+async def chat_completions(request: ChatCompletionRequest, http_request: Request):
     """
     OpenAI-compatible chat completions endpoint.
 
@@ -645,14 +656,22 @@ async def chat_completions(request: ChatCompletionRequest):
     5. Apply category filter if confident (>= 0.75)
     6. Cache the response
     7. Return search parameters to Typesense
+
+    Query Parameters:
+        collection (optional): Typesense collection name to search
+                               Defaults to TYPESENSE_COLLECTION_NAME env var
     """
     try:
+        # Extract collection from query params (defaults to env var)
+        collection_name = http_request.query_params.get('collection', Config.TYPESENSE_COLLECTION_NAME)
+
         # ENTRY POINT LOGGING: Prove Typesense is calling us
         import sys
         timestamp = datetime.now().isoformat()
         print(f"\n{'='*80}", flush=True)
         print(f"[{timestamp}] INCOMING REQUEST FROM TYPESENSE", flush=True)
         print(f"{'='*80}", flush=True)
+        print(f"[REQUEST] Collection: {collection_name}", flush=True)
         print(f"[REQUEST] Model: {request.model}", flush=True)
         print(f"[REQUEST] Messages: {len(request.messages)} messages", flush=True)
         for i, msg in enumerate(request.messages):
@@ -709,8 +728,8 @@ async def chat_completions(request: ChatCompletionRequest):
         else:
             # Fallback: retrieve products (for direct middleware testing only)
             # WARNING: This creates circular dependency when called by Typesense
-            products = await retrieve_products(user_query, limit=20)
-            print(f"[RAG] Retrieved products from Typesense: {len(products)} products", flush=True)
+            products = await retrieve_products(user_query, limit=20, collection_name=collection_name)
+            print(f"[RAG] Retrieved products from Typesense collection '{collection_name}': {len(products)} products", flush=True)
 
         # 5. Build enriched prompt with product context
         enriched_messages = build_enriched_prompt(
@@ -762,8 +781,8 @@ async def chat_completions(request: ChatCompletionRequest):
 async def stats():
     """Service statistics including cache performance"""
     try:
-        # Get collection stats
-        collection_info = typesense_client.collections['mercedes_products'].retrieve()
+        # Get collection stats using default collection
+        collection_info = typesense_client.collections[Config.TYPESENSE_COLLECTION_NAME].retrieve()
 
         # Get cache stats
         cache_stats = {}
@@ -782,7 +801,8 @@ async def stats():
             "service": {
                 "version": "1.0.0",
                 "model": "gpt-4o-mini",
-                "retrieval_limit": 20
+                "retrieval_limit": 20,
+                "default_collection": Config.TYPESENSE_COLLECTION_NAME
             },
             "cache": cache_stats
         }
@@ -800,14 +820,22 @@ async def generate_vllm_format(request: Request):
     {"text": ["generated text"]}
 
     Typesense's vllm/ namespace expects this format.
+
+    Query Parameters:
+        collection (optional): Typesense collection name to search
+                               Defaults to TYPESENSE_COLLECTION_NAME env var
     """
     try:
+        # Extract collection from query params (defaults to env var)
+        collection_name = request.query_params.get('collection', Config.TYPESENSE_COLLECTION_NAME)
+
         # Parse request body
         data = await request.json()
 
         print("\n" + "=" * 80)
         print(f"[{datetime.now().isoformat()}] INCOMING REQUEST FROM TYPESENSE")
         print("=" * 80)
+        print(f"[COLLECTION] Using collection: {collection_name}")
         print(f"[DEBUG] Request keys: {list(data.keys())}")
 
         # Handle both formats:
@@ -868,8 +896,8 @@ async def generate_vllm_format(request: Request):
             return {"text": [json.dumps(params)]}
 
         # RAG Approach: Retrieve products for context
-        print(f"[RAG] Retrieving products for context...")
-        products = await retrieve_products(user_query, limit=20)
+        print(f"[RAG] Retrieving products for context from collection '{collection_name}'...")
+        products = await retrieve_products(user_query, limit=20, collection_name=collection_name)
         print(f"[RAG] Retrieved {len(products)} products")
 
         # Build enriched prompt with RAG context
