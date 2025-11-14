@@ -19,7 +19,12 @@ class Config:
     TYPESENSE_PORT = int(os.getenv("TYPESENSE_PORT", "8108"))
     TYPESENSE_PROTOCOL = os.getenv("TYPESENSE_PROTOCOL", "http")
     TYPESENSE_API_KEY = os.getenv("TYPESENSE_API_KEY")
-    TYPESENSE_COLLECTION_NAME = "mercedes_products"
+    TYPESENSE_COLLECTION_NAME = os.getenv("TYPESENSE_COLLECTION_NAME", "mercedes_products")
+    # NL Search Model ID (collection-based, not environment-based)
+    # Format: middleware-rag-{collection_name}
+    # Examples: "middleware-rag-mercedes_products", "middleware-rag-mercedes_magento"
+    # Multiple environments can share the same model if they use the same collection
+    NL_MODEL_ID = os.getenv("NL_MODEL_ID", f"middleware-rag-{os.getenv('TYPESENSE_COLLECTION_NAME', 'mercedes_products')}")
 
     # Mercedes GraphQL
     MERCEDES_GRAPHQL_URL = os.getenv(
