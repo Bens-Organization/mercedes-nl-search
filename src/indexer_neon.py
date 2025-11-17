@@ -45,8 +45,21 @@ class NeonProductIndexer:
             # All SKUs are cached
             return {sku: self.stock_qty_cache.get(sku) for sku in skus}
 
-        print(f"  Fetching stock quantities from GraphQL for {len(uncached_skus)} products...")
+        # GraphQL has a limit on batch size, process in chunks of 100
+        GRAPHQL_BATCH_SIZE = 100
+        total_to_fetch = len(uncached_skus)
+        print(f"  Fetching stock quantities from GraphQL for {total_to_fetch} products (in batches of {GRAPHQL_BATCH_SIZE})...")
 
+        # Process in chunks
+        for i in range(0, len(uncached_skus), GRAPHQL_BATCH_SIZE):
+            chunk = uncached_skus[i:i + GRAPHQL_BATCH_SIZE]
+            self._fetch_stock_chunk(chunk)
+
+        # Return results for requested SKUs
+        return {sku: self.stock_qty_cache.get(sku) for sku in skus}
+
+    def _fetch_stock_chunk(self, skus_chunk: List[str]):
+        """Fetch stock quantities for a chunk of SKUs."""
         # GraphQL query to fetch stock info for multiple products
         query = """
         query GetStockQuantities($skus: [String!]!) {
@@ -60,7 +73,7 @@ class NeonProductIndexer:
         }
         """
 
-        variables = {"skus": uncached_skus}
+        variables = {"skus": skus_chunk}
 
         try:
             response = requests.post(
@@ -76,7 +89,7 @@ class NeonProductIndexer:
                 if "errors" in data:
                     print(f"  ⚠ GraphQL errors: {data['errors']}")
                     # Mark as None in cache
-                    for sku in uncached_skus:
+                    for sku in skus_chunk:
                         self.stock_qty_cache[sku] = None
                 elif data.get("data", {}).get("products", {}).get("items"):
                     items = data["data"]["products"]["items"]
@@ -90,26 +103,21 @@ class NeonProductIndexer:
 
                     # Mark SKUs not returned as None
                     returned_skus = {item["sku"] for item in items if "sku" in item}
-                    for sku in uncached_skus:
+                    for sku in skus_chunk:
                         if sku not in returned_skus:
                             self.stock_qty_cache[sku] = None
-
-                    print(f"  ✓ Fetched stock quantities for {len(items)} products")
                 else:
                     print(f"  ⚠ No products returned from GraphQL")
-                    for sku in uncached_skus:
+                    for sku in skus_chunk:
                         self.stock_qty_cache[sku] = None
             else:
                 print(f"  ⚠ GraphQL HTTP error: {response.status_code}")
-                for sku in uncached_skus:
+                for sku in skus_chunk:
                     self.stock_qty_cache[sku] = None
         except Exception as e:
             print(f"  ⚠ GraphQL request failed: {e}")
-            for sku in uncached_skus:
+            for sku in skus_chunk:
                 self.stock_qty_cache[sku] = None
-
-        # Return results for requested SKUs
-        return {sku: self.stock_qty_cache.get(sku) for sku in skus}
 
     def create_collection(self):
         """Create Typesense collection with schema."""
