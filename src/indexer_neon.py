@@ -3,7 +3,8 @@ import os
 import json
 import typesense
 import psycopg2
-from typing import List, Dict, Any
+import requests
+from typing import List, Dict, Any, Optional
 from config import Config
 from models import Product
 
@@ -23,6 +24,92 @@ class NeonProductIndexer:
         self.neon_connection_string = os.getenv("NEON_DATABASE_URL")
         if not self.neon_connection_string:
             raise ValueError("NEON_DATABASE_URL environment variable is required")
+
+        # Cache for GraphQL stock quantities (SKU -> stock_qty)
+        self.stock_qty_cache: Dict[str, Optional[float]] = {}
+
+    def fetch_stock_qty_from_graphql(self, skus: List[str]) -> Dict[str, Optional[float]]:
+        """
+        Fetch real-time stock quantities from GraphQL API for batch of SKUs.
+
+        Args:
+            skus: List of product SKUs to fetch stock quantities for
+
+        Returns:
+            Dictionary mapping SKU to stock_qty (or None if not found/error)
+        """
+        # Check cache first
+        uncached_skus = [sku for sku in skus if sku not in self.stock_qty_cache]
+
+        if not uncached_skus:
+            # All SKUs are cached
+            return {sku: self.stock_qty_cache.get(sku) for sku in skus}
+
+        print(f"  Fetching stock quantities from GraphQL for {len(uncached_skus)} products...")
+
+        # GraphQL query to fetch stock info for multiple products
+        query = """
+        query GetStockQuantities($skus: [String!]!) {
+          products(filter: { sku: { in: $skus } }) {
+            items {
+              sku
+              stock_status
+              stock_qty
+            }
+          }
+        }
+        """
+
+        variables = {"skus": uncached_skus}
+
+        try:
+            response = requests.post(
+                os.getenv("MERCEDES_GRAPHQL_URL", "https://www.mercedesscientific.com/graphql"),
+                json={"query": query, "variables": variables},
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+
+                if "errors" in data:
+                    print(f"  ⚠ GraphQL errors: {data['errors']}")
+                    # Mark as None in cache
+                    for sku in uncached_skus:
+                        self.stock_qty_cache[sku] = None
+                elif data.get("data", {}).get("products", {}).get("items"):
+                    items = data["data"]["products"]["items"]
+
+                    # Update cache with fetched data
+                    for item in items:
+                        sku = item.get("sku")
+                        stock_qty = item.get("stock_qty")
+                        if sku:
+                            self.stock_qty_cache[sku] = float(stock_qty) if stock_qty is not None else 0.0
+
+                    # Mark SKUs not returned as None
+                    returned_skus = {item["sku"] for item in items if "sku" in item}
+                    for sku in uncached_skus:
+                        if sku not in returned_skus:
+                            self.stock_qty_cache[sku] = None
+
+                    print(f"  ✓ Fetched stock quantities for {len(items)} products")
+                else:
+                    print(f"  ⚠ No products returned from GraphQL")
+                    for sku in uncached_skus:
+                        self.stock_qty_cache[sku] = None
+            else:
+                print(f"  ⚠ GraphQL HTTP error: {response.status_code}")
+                for sku in uncached_skus:
+                    self.stock_qty_cache[sku] = None
+        except Exception as e:
+            print(f"  ⚠ GraphQL request failed: {e}")
+            for sku in uncached_skus:
+                self.stock_qty_cache[sku] = None
+
+        # Return results for requested SKUs
+        return {sku: self.stock_qty_cache.get(sku) for sku in skus}
 
     def create_collection(self):
         """Create Typesense collection with schema."""
@@ -222,7 +309,11 @@ class NeonProductIndexer:
                 if not rows:
                     break
 
-                # Transform rows
+                # Batch fetch stock quantities from GraphQL before transforming
+                skus_in_batch = [row[0] for row in rows]  # SKU is first column
+                self.fetch_stock_qty_from_graphql(skus_in_batch)
+
+                # Transform rows (now with stock_qty cached)
                 for row in rows:
                     product = self._transform_neon_product(row)
                     if product:
@@ -567,11 +658,30 @@ class NeonProductIndexer:
 
             short_desc_clean = self._clean_html(short_description) if short_description else None
 
-            # Map stock status based on actual quantity (not is_in_stock flag)
-            # qty > 0 means actually in stock, regardless of is_in_stock flag
-            stock_status = "IN_STOCK" if (qty and float(qty) > 0) else "OUT_OF_STOCK"
-            # Priority for sorting: in-stock products appear first
-            in_stock_priority = 1 if stock_status == "IN_STOCK" else 0
+            # Fetch real-time stock_qty from GraphQL cache
+            graphql_stock_qty = self.stock_qty_cache.get(sku)
+
+            # Map stock status using real-time GraphQL stock_qty (matches website logic)
+            # Website logic: stock_status=IN_STOCK + stock_qty=0 → "TO SHIP" (backorder)
+            #                stock_status=IN_STOCK + stock_qty>0 → "IN STOCK"
+            #                stock_status=OUT_OF_STOCK → "OUT OF STOCK"
+            if graphql_stock_qty is not None:
+                # Use GraphQL stock_qty (real-time data)
+                if is_in_stock == '1':
+                    if graphql_stock_qty > 0:
+                        stock_status = "IN_STOCK"
+                    else:
+                        # stock_qty = 0 but is_in_stock = 1 means backorder/to ship
+                        stock_status = "BACKORDER"
+                else:
+                    stock_status = "OUT_OF_STOCK"
+            else:
+                # Fallback to Neon qty if GraphQL failed (stale data warning)
+                print(f"  ⚠ No GraphQL stock_qty for {sku}, using stale Neon qty")
+                stock_status = "IN_STOCK" if (qty and float(qty) > 0) else "OUT_OF_STOCK"
+
+            # Priority for sorting: in-stock products appear first, then backorder, then out of stock
+            in_stock_priority = 1 if stock_status == "IN_STOCK" else (0 if stock_status == "BACKORDER" else -1)
 
             # Build image URL
             image_url = None
