@@ -40,6 +40,12 @@ from datetime import datetime
 
 from src.config import Config
 import typesense
+import warnings
+
+# Suppress Typesense deprecation warnings (we're on v29, not using deprecated APIs)
+warnings.filterwarnings('ignore', message='.*AnalyticsRulesV1 is deprecated.*')
+warnings.filterwarnings('ignore', message='.*Overrides is deprecated.*')
+warnings.filterwarnings('ignore', message='.*synonyms API.*is deprecated.*')
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -266,8 +272,9 @@ def build_enriched_prompt(
 **Category Classification (RAG Approach)**:
 - Look at the categories in the retrieved products above
 - Pick the category that BEST matches the user's query intent
-- ONLY choose categories that start with "Products/" (real product categories)
+- Choose categories from the retrieved products EXACTLY as they appear (e.g., "Products/..." or "Coverslips & Control Slides/...")
 - SKIP categories that start with "Brand:", "Size:", "Color:" (these are attributes, not categories)
+- DO NOT prepend "Products/" to categories that don't already have it
 - If no good match exists, return null
 
 **Confidence Guidelines**:
@@ -279,7 +286,7 @@ def build_enriched_prompt(
 **When to Return null**:
 - Query is only an attribute (e.g., "clear", "blue", "large") without product type
 - Query is only a brand name (e.g., "Mercedes Scientific") without product type
-- No "Products/..." category in retrieved results matches the query
+- No category in retrieved results matches the query well
 - Multiple categories match equally well (ambiguous)
 
 **Query Extraction Rules** (Match Typesense NL behavior):
