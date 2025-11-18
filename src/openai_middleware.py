@@ -285,12 +285,13 @@ def build_enriched_prompt(
 - **SKU patterns**: Code + space + number (e.g., "MER 1200", "TNR 700S", "INN 187100")
 - **Model number patterns**: Alphanumeric codes (e.g., "TNR700S", "K83-913", "BluTouch")
 - **When detected**:
-  - Keep query AS-IS in "q" field (don't transform)
+  - Format query as "sku:{query}" to search ONLY in SKU fields (e.g., "sku:MER 1200")
+  - This restricts search to sku and sku_normalized fields only
   - Set detected_category to null (SKIP category classification)
   - Set category_confidence to 0.0
   - Set category_reasoning to "SKU/model number search - category filter skipped"
   - ONLY extract price/stock/temporal filters if present
-- **Why**: SKU searches rely on sku_normalized fields, category filters would exclude the target product
+- **Why**: SKU searches need field-specific matching to avoid matching across all product descriptions
 
 **Category Classification (RAG Approach)** - SKIP if SKU detected:
 - Look at the categories in the retrieved products above
@@ -369,15 +370,15 @@ IMPORTANT:
 
 **Examples** (RAG-based category selection from retrieved products):
 
-Example 1 - SKU Search (NO category filter):
+Example 1 - SKU Search (field-specific, NO category filter):
 Query: "MER 1200"
 Retrieved categories: ["Products/Chemicals & Stains/Naphthol Yellow", "Brand: Mercedes Scientific"]
-→ {{"q": "MER 1200", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
+→ {{"q": "sku:MER 1200", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
 
-Example 2 - SKU Search with filter:
+Example 2 - SKU Search with filter (field-specific):
 Query: "TNR700S under $100"
 Retrieved categories: ["Products/Lab Equipment/Centrifuges", "Brand: Tanner Scientific"]
-→ {{"q": "TNR700S", "filter_by": "price:<100", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
+→ {{"q": "sku:TNR700S", "filter_by": "price:<100", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
 
 Example 3:
 Query: "test tubes glass"
