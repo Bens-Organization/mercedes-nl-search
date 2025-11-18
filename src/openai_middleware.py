@@ -276,11 +276,23 @@ def build_enriched_prompt(
 {context_str}
 
 **Your Task**:
-1. Extract clean search query (keep measurements, materials, descriptors)
-2. Extract filters (price, stock, special_price, temporal only)
-3. **Select the BEST MATCHING category from the retrieved products above**
+1. **First, check if query is a SKU/Model Number** (if yes, skip category classification)
+2. Extract clean search query (keep measurements, materials, descriptors)
+3. Extract filters (price, stock, special_price, temporal only)
+4. **Select the BEST MATCHING category from the retrieved products above** (ONLY if not a SKU)
 
-**Category Classification (RAG Approach)**:
+**SKU/Model Number Detection** (CRITICAL - Check First):
+- **SKU patterns**: Code + space + number (e.g., "MER 1200", "TNR 700S", "INN 187100")
+- **Model number patterns**: Alphanumeric codes (e.g., "TNR700S", "K83-913", "BluTouch")
+- **When detected**:
+  - Keep query AS-IS in "q" field (don't transform)
+  - Set detected_category to null (SKIP category classification)
+  - Set category_confidence to 0.0
+  - Set category_reasoning to "SKU/model number search - category filter skipped"
+  - ONLY extract price/stock/temporal filters if present
+- **Why**: SKU searches rely on sku_normalized fields, category filters would exclude the target product
+
+**Category Classification (RAG Approach)** - SKIP if SKU detected:
 - Look at the categories in the retrieved products above
 - Pick the category that BEST matches the user's query intent
 - ONLY choose categories that start with "Products/" (real product categories)
@@ -357,32 +369,42 @@ IMPORTANT:
 
 **Examples** (RAG-based category selection from retrieved products):
 
-Example 1:
+Example 1 - SKU Search (NO category filter):
+Query: "MER 1200"
+Retrieved categories: ["Products/Chemicals & Stains/Naphthol Yellow", "Brand: Mercedes Scientific"]
+→ {{"q": "MER 1200", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
+
+Example 2 - SKU Search with filter:
+Query: "TNR700S under $100"
+Retrieved categories: ["Products/Lab Equipment/Centrifuges", "Brand: Tanner Scientific"]
+→ {{"q": "TNR700S", "filter_by": "price:<100", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
+
+Example 3:
 Query: "test tubes glass"
 Retrieved categories: ["Products/Glass & Plasticware/Tubes/Test Tubes", "Brand: Fisher Scientific", "Size: 16mm"]
 → {{"q": "test tube glass", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Test Tubes", "category_confidence": 0.9, "category_reasoning": "Exact match - 'test tubes' maps to Test Tubes category in retrieved products"}}
 
-Example 2:
+Example 4:
 Query: "nitrile gloves under $50"
 Retrieved categories: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell", "Size: Large"]
 → {{"q": "nitrile glove", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category in retrieved results"}}
 
-Example 3:
+Example 5:
 Query: "clear"
 Retrieved categories: ["Products/Glass & Plasticware/Beakers", "Products/Lab Plasticware/Containers", "Brand: Corning"]
 → {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Query is only an attribute without product type - too ambiguous"}}
 
-Example 4:
+Example 6:
 Query: "Mercedes Scientific"
 Retrieved categories: ["Brand: Mercedes Scientific", "Products/Gloves & Apparel/Gloves", "Products/Pipettes"]
 → {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Query is only a brand name - multiple product categories exist"}}
 
-Example 5:
+Example 7:
 Query: "centrifuge tubes 50ml capacity"
 Retrieved categories: ["Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "Brand": Celltreat"]
 → {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity - exact category match in results"}}
 
-Example 6:
+Example 8:
 Query: "pipettes on sale sorted by price"
 Retrieved categories: ["Products/Pipettes", "Brand: Thermo Fisher"]
 → {{"q": "pipette", "filter_by": "special_price:>0", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Clear product type with sale filter and price sort"}}
