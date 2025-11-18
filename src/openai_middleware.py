@@ -285,7 +285,7 @@ def build_enriched_prompt(
 - **SKU patterns**: Code + space + number (e.g., "MER 1200", "TNR 700S", "INN 187100")
 - **Model number patterns**: Alphanumeric codes (e.g., "TNR700S", "K83-913", "BluTouch")
 - **When detected**:
-  - Format query as "sku:{query}" to search ONLY in SKU fields (e.g., "sku:MER 1200")
+  - Prepend "sku:" to the query to search ONLY in SKU fields (e.g., "sku:MER 1200")
   - This restricts search to sku and sku_normalized fields only
   - Set detected_category to null (SKIP category classification)
   - Set category_confidence to 0.0
