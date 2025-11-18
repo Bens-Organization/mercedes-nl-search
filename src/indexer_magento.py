@@ -857,10 +857,14 @@ class MagentoProductIndexer:
             # In-stock priority for sorting (in-stock products appear first)
             in_stock_priority = 1 if stock_status == "IN_STOCK" else 0
 
-            # Image URL
+            # Image URL - strip cache-busting suffix from Magento
             image_url = None
             if image and image != 'no_selection':
-                image_url = f"https://www.mercedesscientific.com/media/catalog/product{image}"
+                # Remove Magento's cache-busting suffix (long random strings: _lmiqvlogvlqkiemc.jpg → .jpg)
+                # Only remove if suffix is 10+ characters (to avoid removing valid filename parts)
+                import re
+                clean_image = re.sub(r'_[a-z0-9]{10,}(\.\w+)$', r'\1', image)
+                image_url = f"https://www.mercedesscientific.com/media/catalog/product{clean_image}"
 
             # Clean descriptions
             description_clean = self._clean_html(description) if description else None
