@@ -30,6 +30,8 @@ app.add_middleware(
         "http://localhost:3000",  # Local Next.js dev
         "http://localhost:5173",  # Local Vite dev
         "https://mercedes-nl-search.vercel.app",  # Production frontend
+        "http://35.232.14.171",  # Magento UI (HTTP)
+        "https://35.232.14.171",  # Magento UI (HTTPS)
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",  # All Vercel preview deployments
     allow_credentials=True,
