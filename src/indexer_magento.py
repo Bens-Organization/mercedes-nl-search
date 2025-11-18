@@ -177,11 +177,6 @@ class MagentoProductIndexer:
             attribute_ids = self._get_attribute_ids(cursor)
             print(f"✓ Found {len(attribute_ids)} product attributes")
 
-            # Build category path cache first (for fast lookups)
-            print("\n⏳ Building category path cache...")
-            category_paths = self._build_category_path_cache(cursor)
-            print(f"✓ Cached {len(category_paths)} category paths")
-
             # Build query to fetch products from EAV structure
             # This is complex because Magento stores attributes across multiple tables
             query = self._build_product_query(attribute_ids, limit)
@@ -198,14 +193,33 @@ class MagentoProductIndexer:
             query_time = time.time() - query_start
             print(f"✓ Query executed in {query_time:.1f}s\n")
 
-            # Fetch and transform products
+            # Fetch all rows
+            rows = cursor.fetchall()
+            print(f"✓ Fetched {len(rows)} products from query\n")
+
+            # Extract product IDs for bulk category fetching
+            product_ids = [row[0] for row in rows]  # entity_id is first column
+
+            # Fetch ALL categories in bulk (MUCH faster than per-product queries!)
+            print("⏳ Fetching categories for all products (bulk optimization)...")
+            product_categories = self._fetch_all_categories_bulk(conn, product_ids)
+
+            # Transform products
             print("⏳ Transforming products...")
             products = []
+            total_rows = len(rows)
 
-            for row in cursor.fetchall():
-                product = self._transform_magento_product(row, attribute_ids, category_paths)
+            for idx, row in enumerate(rows, 1):
+                entity_id = row[0]
+                categories = product_categories.get(entity_id, [])
+                product = self._transform_magento_product(row, categories, attribute_ids)
                 if product:
                     products.append(product)
+
+                # Show progress every 1000 products
+                if idx % 1000 == 0:
+                    progress = (idx / total_rows) * 100
+                    print(f"  Transformed {idx:,}/{total_rows:,} products ({progress:.1f}%)")
 
             cursor.close()
             conn.close()
@@ -220,67 +234,6 @@ class MagentoProductIndexer:
             print(f"✗ Error fetching from Magento: {e}")
             raise
 
-    def _build_category_path_cache(self, cursor) -> Dict[int, str]:
-        """
-        Build a cache of category_id -> full_path_string.
-
-        This avoids N+1 queries when resolving category paths for products.
-        Returns a dict like {15: "Products/Gloves & Apparel/Gloves", ...}
-        """
-        # Get category name attribute ID
-        cursor.execute("""
-            SELECT attribute_id
-            FROM eav_attribute
-            WHERE entity_type_id = (
-                SELECT entity_type_id
-                FROM eav_entity_type
-                WHERE entity_type_code = 'catalog_category'
-            )
-            AND attribute_code = 'name'
-        """)
-        name_attr_result = cursor.fetchone()
-        if not name_attr_result:
-            return {}
-        name_attr_id = name_attr_result[0]
-
-        # Fetch all categories with their paths and names
-        cursor.execute("""
-            SELECT
-                e.entity_id,
-                e.path,
-                v.value as name
-            FROM catalog_category_entity e
-            LEFT JOIN catalog_category_entity_varchar v
-                ON e.entity_id = v.entity_id
-                AND v.attribute_id = %s
-                AND v.store_id = 0
-            WHERE e.level > 1  -- Skip root and base categories
-        """, (name_attr_id,))
-
-        category_data = {}
-        for entity_id, path, name in cursor.fetchall():
-            if name:
-                category_data[entity_id] = {
-                    'name': name,
-                    'path': path  # e.g., "1/2/15/23"
-                }
-
-        # Build full path strings by traversing the hierarchy
-        category_paths = {}
-        for cat_id, data in category_data.items():
-            path_ids = [int(x) for x in data['path'].split('/')]
-            # Build full path by concatenating parent names
-            path_names = []
-            for pid in path_ids:
-                if pid in category_data:
-                    path_names.append(category_data[pid]['name'])
-
-            if path_names:
-                # Join with '/' to create full path
-                category_paths[cat_id] = '/'.join(path_names)
-
-        return category_paths
-
     def _get_attribute_ids(self, cursor) -> Dict[str, int]:
         """
         Get attribute IDs from Magento's eav_attribute table.
@@ -292,7 +245,6 @@ class MagentoProductIndexer:
             'name', 'sku', 'description', 'short_description',
             'price', 'special_price', 'url_key', 'image',
             'weight', 'status', 'visibility',
-            'brand', 'size', 'color', 'physical_form', 'cas_number',
             'created_at', 'updated_at'
         ]
 
@@ -372,17 +324,7 @@ class MagentoProductIndexer:
 
                 -- Stock status
                 stock.is_in_stock,
-                stock.qty,
-
-                -- Custom attributes
-                brand_attr.value as brand,
-                size_attr.value as size,
-                color_attr.value as color,
-                physical_form_attr.value as physical_form,
-                cas_attr.value as cas_number,
-
-                -- Categories (aggregated category IDs for later resolution)
-                GROUP_CONCAT(DISTINCT cat_prod.category_id SEPARATOR ',') as category_ids
+                stock.qty
 
             FROM catalog_product_entity e
 
@@ -441,46 +383,8 @@ class MagentoProductIndexer:
             LEFT JOIN cataloginventory_stock_item stock
                 ON e.entity_id = stock.product_id
 
-            -- Custom attributes
-            LEFT JOIN catalog_product_entity_varchar brand_attr
-                ON e.entity_id = brand_attr.entity_id
-                AND brand_attr.attribute_id = {brand_id}
-                AND brand_attr.store_id = 0
-
-            LEFT JOIN catalog_product_entity_varchar size_attr
-                ON e.entity_id = size_attr.entity_id
-                AND size_attr.attribute_id = {size_id}
-                AND size_attr.store_id = 0
-
-            LEFT JOIN catalog_product_entity_varchar color_attr
-                ON e.entity_id = color_attr.entity_id
-                AND color_attr.attribute_id = {color_id}
-                AND color_attr.store_id = 0
-
-            LEFT JOIN catalog_product_entity_varchar physical_form_attr
-                ON e.entity_id = physical_form_attr.entity_id
-                AND physical_form_attr.attribute_id = {physical_form_id}
-                AND physical_form_attr.store_id = 0
-
-            LEFT JOIN catalog_product_entity_varchar cas_attr
-                ON e.entity_id = cas_attr.entity_id
-                AND cas_attr.attribute_id = {cas_number_id}
-                AND cas_attr.store_id = 0
-
-            -- Categories (just get IDs, we'll resolve paths later using cache)
-            LEFT JOIN catalog_category_product cat_prod
-                ON e.entity_id = cat_prod.product_id
-
             WHERE status_attr.value = 1  -- Only enabled products
             AND visibility_attr.value IN (2, 3, 4)  -- Catalog, Search, Both (not "Not Visible Individually")
-
-            GROUP BY e.entity_id, e.sku, e.type_id, e.created_at, e.updated_at,
-                     name_attr.value, url_attr.value, desc_attr.value, short_desc_attr.value,
-                     price_attr.value, special_price_attr.value, image_attr.value,
-                     weight_attr.value, status_attr.value, visibility_attr.value,
-                     stock.is_in_stock, stock.qty,
-                     brand_attr.value, size_attr.value, color_attr.value,
-                     physical_form_attr.value, cas_attr.value
         """
 
         # Format with attribute IDs
@@ -495,11 +399,6 @@ class MagentoProductIndexer:
             weight_id=attribute_ids.get('weight', {}).get('id', 0),
             status_id=attribute_ids.get('status', {}).get('id', 0),
             visibility_id=attribute_ids.get('visibility', {}).get('id', 0),
-            brand_id=attribute_ids.get('brand', {}).get('id', 0),
-            size_id=attribute_ids.get('size', {}).get('id', 0),
-            color_id=attribute_ids.get('color', {}).get('id', 0),
-            physical_form_id=attribute_ids.get('physical_form', {}).get('id', 0),
-            cas_number_id=attribute_ids.get('cas_number', {}).get('id', 0),
         )
 
         if limit:
@@ -507,8 +406,98 @@ class MagentoProductIndexer:
 
         return query
 
+    def _fetch_all_categories_bulk(self, conn, product_ids: List[int]) -> Dict[int, List[str]]:
+        """
+        Fetch all categories for all products in ONE query (bulk optimization).
+
+        Returns:
+            Dictionary mapping product_id -> list of category paths
+        """
+        if not product_ids:
+            return {}
+
+        cursor = conn.cursor()
+
+        # Step 1: Get all product-category relationships in one query
+        print("  📂 Fetching product-category mappings...")
+        placeholders = ','.join(['%s'] * len(product_ids))
+        cursor.execute(f"""
+            SELECT cp.product_id, c.entity_id, c.path, c.level
+            FROM catalog_category_product cp
+            JOIN catalog_category_entity c ON cp.category_id = c.entity_id
+            WHERE cp.product_id IN ({placeholders})
+        """, product_ids)
+
+        product_category_paths = {}
+        category_ids_needed = set()
+
+        for product_id, cat_id, path, level in cursor.fetchall():
+            if product_id not in product_category_paths:
+                product_category_paths[product_id] = []
+            product_category_paths[product_id].append(path)
+
+            # Collect all category IDs we need names for
+            for cid in path.split('/'):
+                if cid:
+                    category_ids_needed.add(int(cid))
+
+        print(f"    ✓ Found {len(product_category_paths)} products with categories")
+        print(f"    ✓ Need to fetch {len(category_ids_needed)} unique category names")
+
+        # Step 2: Get all category names in one query
+        print("  📂 Fetching category names...")
+        category_ids_list = list(category_ids_needed)
+        placeholders = ','.join(['%s'] * len(category_ids_list))
+        cursor.execute(f"""
+            SELECT entity_id, value
+            FROM catalog_category_entity_varchar
+            WHERE entity_id IN ({placeholders})
+            AND attribute_id = (
+                SELECT attribute_id FROM eav_attribute
+                WHERE entity_type_id = (
+                    SELECT entity_type_id FROM eav_entity_type
+                    WHERE entity_type_code = 'catalog_category'
+                )
+                AND attribute_code = 'name'
+            )
+            AND store_id = 0
+        """, category_ids_list)
+
+        id_to_name = {int(eid): name for eid, name in cursor.fetchall()}
+        print(f"    ✓ Fetched {len(id_to_name)} category names")
+
+        # Step 3: Build category paths for each product
+        print("  📂 Building category paths...")
+        product_categories = {}
+
+        for product_id, paths in product_category_paths.items():
+            categories = []
+            for path in paths:
+                category_ids = [cid for cid in path.split('/') if cid]
+
+                # Build category path preserving order
+                cat_path_names = []
+                for cat_id in category_ids:
+                    if int(cat_id) in id_to_name:
+                        cat_path_names.append(id_to_name[int(cat_id)])
+
+                if cat_path_names:
+                    full_path = ' / '.join(cat_path_names)
+                    categories.append(full_path)
+
+            product_categories[product_id] = categories
+
+        cursor.close()
+        print(f"    ✓ Built category paths for {len(product_categories)} products\n")
+
+        return product_categories
+
     def _get_product_categories(self, cursor, product_id: int) -> List[str]:
-        """Fetch category names for a product."""
+        """
+        Fetch category names for a product.
+        Returns the full category path for each category (e.g., "Products/Gloves/Nitrile").
+        """
+        # First get all category IDs for this product
         query = """
             SELECT c.path
             FROM catalog_category_product cp
@@ -520,13 +509,13 @@ class MagentoProductIndexer:
         categories = []
 
         for (path,) in cursor.fetchall():
-            # Path is like "1/2/15" - get category names
-            category_ids = path.split('/')
+            # Path is like "1/2/15" - get category names for entire path
+            category_ids = [cid for cid in path.split('/') if cid]
 
-            # Fetch category names
-            if len(category_ids) > 2:  # Skip root categories
+            # Fetch category names for all IDs in the path
+            if len(category_ids) >= 2:  # Skip root-only paths
                 cat_query = """
-                    SELECT value
+                    SELECT entity_id, value
                     FROM catalog_category_entity_varchar
                     WHERE entity_id IN ({})
                     AND attribute_id = (
@@ -540,66 +529,26 @@ class MagentoProductIndexer:
                         AND attribute_code = 'name'
                     )
                     AND store_id = 0
+                    ORDER BY entity_id
                 """.format(','.join(['%s'] * len(category_ids)))
 
                 cursor.execute(cat_query, category_ids)
-                cat_names = [name for (name,) in cursor.fetchall()]
 
-                if cat_names:
-                    categories.append(' / '.join(cat_names))
+                # Build a map of entity_id -> name
+                id_to_name = {int(eid): name for eid, name in cursor.fetchall()}
+
+                # Build category path preserving order
+                cat_path_names = []
+                for cat_id in category_ids:
+                    if int(cat_id) in id_to_name:
+                        cat_path_names.append(id_to_name[int(cat_id)])
+
+                if cat_path_names:
+                    # Join with '/' to create full path
+                    full_path = '/'.join(cat_path_names)
+                    categories.append(full_path)
 
         return categories
-
-    def _clean_and_deduplicate_categories(self, raw_categories: List[str]) -> List[str]:
-        """
-        Clean and deduplicate category paths (same logic as Neon indexer).
-
-        Removes "Root Catalog / Mercedes Scientific Main Store / " prefix and deduplicates
-        categories that have the same end path. Prefers shorter, more direct paths.
-        """
-        if not raw_categories:
-            return []
-
-        # Step 1: Clean category paths by removing prefixes
-        cleaned = []
-        for cat in raw_categories:
-            # Remove prefixes
-            cleaned_cat = cat.replace("Root Catalog / Mercedes Scientific Main Store / ", "")
-            cleaned_cat = cleaned_cat.replace("Mercedes Scientific Main Store / ", "")
-            cleaned_cat = cleaned_cat.replace("Root Catalog / ", "")
-            if cleaned_cat:
-                cleaned.append(cleaned_cat)
-
-        # Step 2: Deduplicate by end path (last 2 segments)
-        seen_end_paths = {}
-        unique_categories = []
-
-        for cat in cleaned:
-            parts = cat.split(' / ')
-
-            # Consider the last 2 segments as the "end path"
-            if len(parts) >= 2:
-                end_path = ' / '.join(parts[-2:])
-            else:
-                end_path = cat
-
-            # If we haven't seen this end path, or if this is a shorter path, keep it
-            if end_path not in seen_end_paths:
-                seen_end_paths[end_path] = cat
-                unique_categories.append(cat)
-            else:
-                # If this path is shorter, replace the existing one
-                existing = seen_end_paths[end_path]
-                if len(cat) < len(existing):
-                    if existing in unique_categories:
-                        unique_categories.remove(existing)
-                    seen_end_paths[end_path] = cat
-                    unique_categories.append(cat)
-
-        # Step 3: Sort to have "Products" paths first
-        unique_categories.sort(key=lambda x: (not x.startswith('Products / '), len(x), x))
-
-        return unique_categories
 
     def _normalize_sku(self, text: str) -> str:
         """Normalize SKU (same as Neon indexer)."""
@@ -618,19 +567,261 @@ class MagentoProductIndexer:
         normalized = " ".join(normalized.split())
         return normalized
 
-    def _calculate_brand_priority(self, brand: str, product_name: str = None) -> int:
-        """Calculate brand priority (same as Neon indexer)."""
-        brand_lower = (brand or "").lower().strip()
+    def _detect_category_type(self, categories: List[str]) -> str:
+        """
+        Detect the category type for brand ranking.
+
+        Returns:
+            - "lcms_hplc" for LCMS/HPLC Solvents
+            - "drug_testing" for Drug Testing products
+            - "general" for all other products
+        """
+        if not categories:
+            return "general"
+
+        # Check categories for LCMS/HPLC indicators
+        for cat in categories:
+            cat_lower = cat.lower()
+            # Check for LCMS/HPLC grade indicators
+            if any(grade in cat for grade in ["Grade: HPLC", "Grade: LCMS", "Grade: Ultra HPLC"]):
+                return "lcms_hplc"
+            # Check for Drug Testing category
+            if "drug test" in cat_lower:
+                return "drug_testing"
+
+        return "general"
+
+    def _detect_brand(self, sku: str, brand_field: str, product_name: str) -> str:
+        """
+        Detect brand from multiple sources.
+
+        Priority:
+        1. SKU prefix (most reliable)
+        2. Brand field
+        3. Product name
+
+        Returns:
+            Normalized brand name in lowercase, or None if no brand detected
+        """
+        sku_upper = (sku or "").upper().strip()
+        brand_lower = (brand_field or "").lower().strip()
         name_lower = (product_name or "").lower().strip()
 
-        if "mercedes scientific" in brand_lower or "mercedes scientific" in name_lower:
-            return 100
-        elif "tanner scientific" in brand_lower or "tanner scientific" in name_lower:
-            return 90
-        elif brand:
-            return 50
-        else:
+        # Check SKU prefix first (most reliable)
+        if sku_upper.startswith("TBK"):
+            return "concord technologies"
+        elif sku_upper.startswith("BIR"):
+            return "birch biotech"
+        elif sku_upper.startswith("MER"):
+            return "mercedes scientific"
+        elif sku_upper.startswith("ALT"):
+            return "alltest"
+        elif sku_upper.startswith("TNR"):
+            return "tanner scientific"
+        elif sku_upper.startswith("HGS"):
+            return "healgen"
+        elif sku_upper.startswith("WON"):
+            return "wondfo"
+
+        # Check brand field (good for most products)
+        if "concord" in brand_lower and "technology" in brand_lower:
+            return "concord technologies"
+        elif "birch" in brand_lower and "biotech" in brand_lower:
+            return "birch biotech"
+        elif "mercedes scientific" in brand_lower:
+            return "mercedes scientific"
+        elif "alltest" in brand_lower:
+            return "alltest"
+        elif "tanner scientific" in brand_lower:
+            return "tanner scientific"
+        elif "healgen" in brand_lower:
+            return "healgen"
+        elif "wondfo" in brand_lower:
+            return "wondfo"
+
+        # Check product name (fallback)
+        if "mercedes scientific" in name_lower:
+            return "mercedes scientific"
+        elif "tanner scientific" in name_lower:
+            return "tanner scientific"
+        elif "concord" in name_lower:
+            return "concord technologies"
+        elif "birch" in name_lower and "biotech" in name_lower:
+            return "birch biotech"
+        elif "alltest" in name_lower:
+            return "alltest"
+        elif "healgen" in name_lower:
+            return "healgen"
+        elif "wondfo" in name_lower:
+            return "wondfo"
+
+        # Return original brand field if available
+        return brand_field if brand_field else None
+
+    def _calculate_brand_priority(self, sku: str, brand: str, product_name: str, categories: List[str]) -> int:
+        """
+        Calculate brand priority for sorting based on category and brand.
+
+        Priority structure varies by category:
+
+        **LCMS/HPLC Solvents** (detected by Grade: HPLC/LCMS in categories):
+            100 - Concord Technologies (TBK prefix)
+            90  - Birch Biotech (BIR prefix)
+            80  - Mercedes Scientific (MER prefix)
+            70  - Tanner Scientific (TNR prefix)
+            50  - Other brands
+            0   - No brand
+
+        **Drug Testing** (detected by "Drug Test" in categories):
+            100 - Mercedes Scientific (MER prefix)
+            90  - AllTest (ALT prefix)
+            80  - Tanner Scientific (TNR prefix)
+            70  - Healgen (HGS prefix)
+            60  - Wondfo (WON prefix)
+            50  - Other brands
+            0   - No brand
+
+        **General** (all other categories):
+            100 - Mercedes Scientific
+            90  - Tanner Scientific
+            50  - Other brands
+            0   - No brand
+
+        Args:
+            sku: Product SKU (used for prefix detection)
+            brand: Brand name from additional_attributes
+            product_name: Product name (used as fallback)
+            categories: List of category paths
+
+        Returns:
+            Priority score (higher = more important)
+        """
+        # Detect category type
+        category_type = self._detect_category_type(categories)
+
+        # Detect brand from multiple sources
+        detected_brand = self._detect_brand(sku, brand, product_name)
+
+        if not detected_brand:
             return 0
+
+        brand_lower = detected_brand.lower()
+
+        # LCMS/HPLC Solvents category
+        if category_type == "lcms_hplc":
+            if brand_lower == "concord technologies":
+                return 100
+            elif brand_lower == "birch biotech":
+                return 90
+            elif brand_lower == "mercedes scientific":
+                return 80
+            elif brand_lower == "tanner scientific":
+                return 70
+            else:
+                return 50
+
+        # Drug Testing category
+        elif category_type == "drug_testing":
+            if brand_lower == "mercedes scientific":
+                return 100
+            elif brand_lower == "alltest":
+                return 90
+            elif brand_lower == "tanner scientific":
+                return 80
+            elif brand_lower == "healgen":
+                return 70
+            elif brand_lower == "wondfo":
+                return 60
+            else:
+                return 50
+
+        # General (all other categories)
+        else:
+            if brand_lower == "mercedes scientific":
+                return 100
+            elif brand_lower == "tanner scientific":
+                return 90
+            else:
+                return 50 if detected_brand else 0
+
+    def _clean_and_deduplicate_categories(self, raw_categories: List[str]) -> List[str]:
+        """
+        Clean and deduplicate category names.
+
+        Removes "Root Catalog / Mercedes Scientific Main Store /" prefix and deduplicates categories
+        that have the same end path (e.g., multiple "Shop By Lab" variations).
+        Prefers shorter, more direct paths (Products over Shop By Lab).
+        """
+        if not raw_categories:
+            return []
+
+        # Step 1: Clean category names by removing prefix
+        cleaned = []
+        for cat in raw_categories:
+            # Remove the "Root Catalog / Mercedes Scientific Main Store /" prefix
+            cleaned_cat = cat.replace("Root Catalog / Mercedes Scientific Main Store / ", "")
+            # Fallback for variations
+            cleaned_cat = cleaned_cat.replace("Root Catalog/Mercedes Scientific Main Store/", "")
+            cleaned_cat = cleaned_cat.replace("Mercedes Scientific Main Store/", "")
+            cleaned_cat = cleaned_cat.replace("Root Catalog/", "")
+            if cleaned_cat:
+                cleaned.append(cleaned_cat)
+
+        # Step 2: Deduplicate by end path
+        # Keep track of end paths we've seen (after last '/')
+        seen_end_paths = {}
+        unique_categories = []
+
+        for cat in cleaned:
+            # Extract the end path (e.g., "Specimen Collection/Cytology")
+            parts = cat.split('/')
+
+            # Consider the last 2 segments as the "end path" for deduplication
+            # This handles cases like "Products/Gloves" vs "Shop By Lab/Chemistry/Gloves"
+            if len(parts) >= 2:
+                end_path = '/'.join(parts[-2:])
+            else:
+                end_path = cat
+
+            # If we haven't seen this end path, or if this is a shorter path, keep it
+            if end_path not in seen_end_paths:
+                seen_end_paths[end_path] = cat
+                unique_categories.append(cat)
+            else:
+                # If this path is shorter, replace the existing one
+                existing = seen_end_paths[end_path]
+                if len(cat) < len(existing):
+                    # Remove the old one and add the new shorter one
+                    if existing in unique_categories:
+                        unique_categories.remove(existing)
+                    seen_end_paths[end_path] = cat
+                    unique_categories.append(cat)
+
+        # Step 3: Sort to have "Products" paths first, then others
+        unique_categories.sort(key=lambda x: (not x.startswith('Products/'), len(x), x))
+
+        return unique_categories
+
+    def _parse_brand_from_html(self, short_description: str) -> str:
+        """
+        Parse brand from short_description HTML.
+
+        Looks for patterns like:
+        <p><strong>Brand:</strong> Tanner Scientific®</p>
+        """
+        if not short_description:
+            return None
+
+        import re
+        # Look for <strong>Brand:</strong> pattern
+        match = re.search(r'<strong>Brand:</strong>\s*([^<]+)', short_description, re.IGNORECASE)
+        if match:
+            brand = match.group(1).strip()
+            # Remove ® and ™ symbols
+            brand = brand.replace('®', '').replace('™', '').strip()
+            return brand if brand else None
+
+        return None
 
     def _clean_html(self, html: str) -> str:
         """Remove HTML tags."""
@@ -641,16 +832,30 @@ class MagentoProductIndexer:
         clean = clean.strip()
         return clean[:500] if len(clean) > 500 else clean
 
-    def _transform_magento_product(self, row, attribute_ids: Dict[str, int], category_paths: Dict[int, str]) -> Dict[str, Any]:
-        """Transform Magento database row to Typesense document."""
+    def _transform_magento_product(self, row, raw_categories: List[str], attribute_ids: Dict[str, int]) -> Dict[str, Any]:
+        """
+        Transform Magento database row to Typesense document.
+
+        Args:
+            row: Database row from product query
+            raw_categories: Pre-fetched category paths for this product
+            attribute_ids: Attribute ID mapping (unused but kept for compatibility)
+        """
         try:
             (entity_id, sku, type_id, created_at, updated_at,
              name, url_key, description, short_description,
              price, special_price, image, weight, status, visibility,
-             is_in_stock, qty, brand, size, color, physical_form, cas_number, category_ids) = row
+             is_in_stock, qty) = row
 
-            # Stock status
-            stock_status = "IN_STOCK" if is_in_stock == 1 else "OUT_OF_STOCK"
+            # Parse brand from short_description HTML
+            brand = self._parse_brand_from_html(short_description)
+
+            # Stock status based on actual quantity (not just is_in_stock flag)
+            # qty > 0 means actually in stock, regardless of is_in_stock flag
+            stock_status = "IN_STOCK" if (qty and float(qty) > 0) else "OUT_OF_STOCK"
+
+            # In-stock priority for sorting (in-stock products appear first)
+            in_stock_priority = 1 if stock_status == "IN_STOCK" else 0
 
             # Image URL
             image_url = None
@@ -677,26 +882,15 @@ class MagentoProductIndexer:
                 except:
                     pass
 
-            # Parse category IDs and resolve to full paths
-            raw_category_list = []
-            if category_ids:
-                # Split comma-separated IDs and resolve each to full path
-                for cat_id_str in category_ids.split(','):
-                    try:
-                        cat_id = int(cat_id_str.strip())
-                        if cat_id in category_paths:
-                            raw_category_list.append(category_paths[cat_id])
-                    except (ValueError, AttributeError):
-                        pass  # Skip invalid IDs
+            # Clean and deduplicate categories (already fetched in bulk)
+            categories = self._clean_and_deduplicate_categories(raw_categories)
 
-            # Clean and deduplicate categories
-            category_list = self._clean_and_deduplicate_categories(raw_category_list)
+            # Add brand to categories for better searchability (if we parsed it from HTML)
+            if brand:
+                categories.append(f"Brand: {brand}")
 
-            # Brand priority
-            brand_priority = self._calculate_brand_priority(brand, name)
-
-            # In-stock priority for sorting (in-stock products appear first)
-            in_stock_priority = 1 if stock_status == "IN_STOCK" else 0
+            # Calculate brand priority (category-aware, checks SKU prefix, brand field, and product name)
+            brand_priority = self._calculate_brand_priority(sku, brand, name, categories)
 
             return {
                 "product_id": str(entity_id),
@@ -714,13 +908,13 @@ class MagentoProductIndexer:
                 "special_price": float(special_price) if special_price else None,
                 "currency": "USD",
                 "image_url": image_url,
-                "categories": category_list,
-                "brand": brand,
+                "categories": categories,
+                "brand": brand,  # Parsed from HTML short_description
                 "brand_priority": brand_priority,
-                "size": size,
-                "color": color,
-                "physical_form": physical_form,
-                "cas_number": cas_number,
+                "size": None,  # Not available in Magento (would need to parse from HTML)
+                "color": None,  # Not available in Magento (would need to parse from HTML)
+                "physical_form": None,  # Not available in Magento
+                "cas_number": None,  # Not available in Magento
                 "qty": float(qty) if qty else None,
                 "weight": float(weight) if weight else None,
                 "created_at": created_ts,
@@ -731,7 +925,39 @@ class MagentoProductIndexer:
 
         except Exception as e:
             print(f"  ⚠ Error transforming product {row[1] if len(row) > 1 else 'unknown'}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+
+    def _check_nl_model(self):
+        """Check if natural language search model is configured."""
+        import requests
+
+        model_id = "openai-gpt4o-mini"
+        base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
+
+        headers = {
+            "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
+            "Content-Type": "application/json"
+        }
+
+        try:
+            check_url = f"{base_url}/nl_search_models/{model_id}"
+            response = requests.get(check_url, headers=headers, timeout=5)
+
+            if response.status_code == 200:
+                print(f"\n✓ Natural Language Search model '{model_id}' is configured")
+            else:
+                print(f"\n⚠ WARNING: Natural Language Search model not configured!")
+                print(f"   Model '{model_id}' does not exist in Typesense.")
+                print(f"   Your search will work, but NL features (filter extraction, etc.) will be limited.")
+                print(f"   Run: python src/setup_nl_model.py")
+        except Exception:
+            print(f"\n⚠ WARNING: Natural Language Search model not configured!")
+            print(f"   Model '{model_id}' does not exist in Typesense.")
+            print(f"   Your search will work, but NL features (filter extraction, etc.) will be limited.")
+            print(f"   Run: python src/setup_nl_model.py")
+        print()
 
     def index_products(self, products: List[Dict[str, Any]], batch_size: int = 100):
         """Index products to Typesense (same as Neon indexer)."""
@@ -786,83 +1012,6 @@ class MagentoProductIndexer:
             print(f"⚠ Failed to index: {failed_count} products")
         print(f"{'='*60}")
 
-    def update_single_product(self, product_id: int) -> bool:
-        """
-        Update a single product in Typesense (for webhook use).
-
-        Args:
-            product_id: Magento product entity_id
-
-        Returns:
-            True if successful, False otherwise
-        """
-        print(f"\n{'='*60}")
-        print(f"[WEBHOOK] Updating product ID {product_id}...")
-        print(f"{'='*60}")
-
-        try:
-            # Connect to MySQL
-            conn = mysql.connector.connect(
-                host=self.mysql_host,
-                port=self.mysql_port,
-                database=self.mysql_database,
-                user=self.mysql_user,
-                password=self.mysql_password
-            )
-            cursor = conn.cursor()
-
-            # Get attribute IDs
-            print("[WEBHOOK] Discovering Magento attribute IDs...")
-            attribute_ids = self._get_attribute_ids(cursor)
-
-            # Build query for single product
-            query = self._build_product_query(attribute_ids, limit=None)
-            query += f" AND e.entity_id = {product_id}"
-
-            print(f"[WEBHOOK] Fetching product data...")
-            cursor.execute(query)
-            row = cursor.fetchone()
-
-            if row:
-                print(f"[WEBHOOK] Transforming product data...")
-                product = self._transform_magento_product(row, attribute_ids)
-
-                if product:
-                    print(f"[WEBHOOK] Upserting to Typesense collection: {self.collection_name}")
-                    # Upsert to Typesense (update if exists, insert if new)
-                    self.typesense_client.collections[self.collection_name].documents.upsert(product)
-
-                    print(f"\n{'='*60}")
-                    print(f"[WEBHOOK] ✓ Successfully updated product:")
-                    print(f"[WEBHOOK]   SKU: {product['sku']}")
-                    print(f"[WEBHOOK]   Name: {product['name']}")
-                    print(f"[WEBHOOK]   Price: ${product['price']}")
-                    print(f"[WEBHOOK]   Stock: {product['stock_status']}")
-                    print(f"{'='*60}")
-
-                    cursor.close()
-                    conn.close()
-                    return True
-                else:
-                    print(f"[WEBHOOK] ✗ Failed to transform product data")
-                    cursor.close()
-                    conn.close()
-                    return False
-            else:
-                print(f"[WEBHOOK] ✗ Product ID {product_id} not found in database")
-                print(f"[WEBHOOK]   (It may be disabled or not visible)")
-                cursor.close()
-                conn.close()
-                return False
-
-        except Exception as e:
-            print(f"\n{'='*60}")
-            print(f"[WEBHOOK] ✗ Error updating product: {e}")
-            print(f"{'='*60}")
-            import traceback
-            traceback.print_exc()
-            return False
-
     def run(self, max_products: int = None):
         """Run the complete indexing process."""
         print("=" * 60)
@@ -878,6 +1027,9 @@ class MagentoProductIndexer:
         print(f"Embedding Model: {Config.OPENAI_EMBEDDING_MODEL}")
         print(f"Collection: {self.collection_name}")
         print("=" * 60)
+
+        # Check if NL search model is configured
+        self._check_nl_model()
 
         try:
             # Create collection
