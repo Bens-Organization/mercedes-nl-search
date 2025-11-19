@@ -173,7 +173,7 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         search_params = {
             "q": query,
             "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
-            "query_by_weights": "100,100,4,4,3,3,1",  # Extreme priority to original fields, normalized assist
+            "query_by_weights": "100,100,4,4,3,3,150",  # Boosted category weight (1→150) to prioritize main products over accessories (JAI-2194)
             "per_page": limit,
             "prefix": "true,true,true,true,false,false,false",
             "num_typos": 2,

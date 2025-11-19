@@ -144,7 +144,7 @@ class Search:
         search_params = {
             "q": query,
             "query_by": "name,sku,size,name_normalized,sku_normalized,description,short_description,categories",
-            "query_by_weights": "100,100,150,4,4,3,3,1",  # Boost size field (150) for exact matches
+            "query_by_weights": "100,100,150,4,4,3,3,200",  # Boosted category weight (1→200) to prioritize main products over accessories (JAI-2194)
             "per_page": fetch_results,  # Fetch more if size pattern detected
             "nl_query": True,  # Enable natural language processing
             "nl_model_id": Config.NL_MODEL_ID,  # Use configured NL model (environment-specific)
