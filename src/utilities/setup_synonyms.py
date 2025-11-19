@@ -30,7 +30,7 @@ class SynonymManager:
             'api_key': Config.TYPESENSE_API_KEY,
             'connection_timeout_seconds': 10
         })
-        self.collection_name = 'mercedes_products'
+        self.collection_name = Config.TYPESENSE_COLLECTION_NAME
 
     def get_synonym_groups(self) -> List[Dict]:
         """
@@ -200,6 +200,12 @@ class SynonymManager:
             {
                 "id": "parafin-paraffin",
                 "synonyms": ["parafin", "paraffin"]
+            },
+
+            # Private Label Alternatives
+            {
+                "id": "kimwipes-sciswipe",
+                "synonyms": ["kimwipes", "sciswipe", "kimwipe", "delicate task wipes"]
             },
         ]
 
