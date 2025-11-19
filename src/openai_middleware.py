@@ -547,7 +547,25 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
 
             if detected_category and category_confidence >= confidence_threshold:
                 # Remove backticks from category (if present)
-                escaped_category = detected_category.replace("`", "")
+                normalized_category = detected_category.replace("`", "")
+
+                # CRITICAL: LLM may normalize categories (remove spaces)
+                # Match the LLM's category back to ACTUAL category from retrieved products
+                # Example: LLM returns "Products/Gloves & Apparel/Gloves"
+                #          But actual is "Products / Gloves & Apparel / Gloves" (with spaces)
+                escaped_category = normalized_category
+
+                if retrieved_products:
+                    # Find exact match from retrieved categories (case-insensitive, space-insensitive)
+                    normalized_lower = normalized_category.lower().replace(" ", "").replace("/", "")
+                    for product in retrieved_products:
+                        for cat in product.get('categories', []):
+                            cat_normalized = cat.lower().replace(" ", "").replace("/", "")
+                            if cat_normalized == normalized_lower and cat.startswith('Products'):
+                                # Found exact match! Use the ACTUAL category string
+                                escaped_category = cat
+                                print(f"[RAG] ✅ Matched LLM category '{normalized_category}' to actual '{cat}'")
+                                break
 
                 # Detect if this is a broad query spanning multiple subcategories
                 # Example: "alcohol" query retrieves both "Ethyl Alcohol" and "Isopropyl Alcohol"
