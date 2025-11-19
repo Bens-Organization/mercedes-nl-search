@@ -296,13 +296,27 @@ def build_enriched_prompt(
 **Category Classification (RAG Approach)** - SKIP if SKU detected:
 - Look at the categories in the retrieved products above
 - Pick the category that BEST matches the user's query intent
-- ONLY choose categories that start with "Products/" (real product categories)
+- **PREFER MORE SPECIFIC CATEGORIES**: If multiple category paths exist, choose the LONGEST/MOST SPECIFIC one
+  - Example: For "cassettes", prefer "Cryotomy & Grossing / Cassettes" over "Products / Embedding"
+  - Example: For "test tubes", prefer "Glass & Plasticware / Tubes / Test Tubes" over "Glass & Plasticware"
+- ONLY choose categories that start with "Products/" OR contain specific product types (e.g., "Cassettes", "Gloves")
 - SKIP categories that start with "Brand:", "Size:", "Color:" (these are attributes, not categories)
+- SKIP broad parent categories if more specific subcategories exist
 - If no good match exists, return null
 
+**Specificity Rules** (CRITICAL for avoiding accessory contamination):
+- **Most Specific Match**: Look for the deepest category path that matches the product type
+  - "cassettes" → "Cryotomy & Grossing / Cassettes" NOT "Products / Embedding"
+  - "pipettes" → "Pipettes" NOT "Products / Lab Equipment"
+  - "gloves" → "Gloves & Apparel / Gloves" NOT "Gloves & Apparel"
+- **Avoid Accessory Categories**: Don't select categories for accessories/consumables
+  - "cassettes" → NOT "Biopsy Bags" (these are cassette papers, not cassettes)
+  - "pipettes" → NOT "Pipette Tips" (these are tips, not pipettes)
+  - "gloves" → NOT "Glove Dispensers" (these are dispensers, not gloves)
+
 **Confidence Guidelines**:
-- **0.9-1.0**: Exact product type match (e.g., "test tubes" → "Products/.../Test Tubes")
-- **0.8-0.9**: Clear product type match (e.g., "gloves" → "Products/.../Gloves")
+- **0.9-1.0**: Exact product type match with specific subcategory (e.g., "test tubes" → "Products/.../Test Tubes")
+- **0.8-0.9**: Clear product type match with specific category (e.g., "gloves" → "Products/.../Gloves")
 - **0.75-0.85**: Product type with material/property (e.g., "nitrile gloves" → "Products/.../Gloves")
 - **< 0.75**: Too ambiguous, return null
 
@@ -311,6 +325,7 @@ def build_enriched_prompt(
 - Query is only a brand name (e.g., "Mercedes Scientific") without product type
 - No "Products/..." category in retrieved results matches the query
 - Multiple categories match equally well (ambiguous)
+- Only broad parent categories exist without specific subcategories
 
 **Query Extraction Rules** (Match Typesense NL behavior):
 
@@ -380,32 +395,37 @@ Query: "TNR700S under $100"
 Retrieved categories: ["Products/Lab Equipment/Centrifuges", "Brand: Tanner Scientific"]
 → {{"q": "sku:TNR700S", "filter_by": "price:<100", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
 
-Example 3:
+Example 3 - Specific Category Over Broad Parent (CRITICAL for avoiding accessories):
+Query: "cassettes under $200"
+Retrieved categories: ["Products / Embedding", "Cryotomy & Grossing / Cassettes", "Cryotomy & Grossing / Biopsy Bags, Paper & Sponges", "Brand: Cancer Diagnostics"]
+→ {{"q": "cassette", "filter_by": "price:<200", "sort_by": "", "per_page": 20, "detected_category": "Cryotomy & Grossing / Cassettes", "category_confidence": 0.9, "category_reasoning": "Chose specific 'Cassettes' category over broad 'Embedding' parent to avoid cassette papers/accessories in 'Biopsy Bags' category"}}
+
+Example 4:
 Query: "test tubes glass"
 Retrieved categories: ["Products/Glass & Plasticware/Tubes/Test Tubes", "Brand: Fisher Scientific", "Size: 16mm"]
 → {{"q": "test tube glass", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Test Tubes", "category_confidence": 0.9, "category_reasoning": "Exact match - 'test tubes' maps to Test Tubes category in retrieved products"}}
 
-Example 4:
+Example 5:
 Query: "nitrile gloves under $50"
 Retrieved categories: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell", "Size: Large"]
 → {{"q": "nitrile glove", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category in retrieved results"}}
 
-Example 5:
+Example 6:
 Query: "clear"
 Retrieved categories: ["Products/Glass & Plasticware/Beakers", "Products/Lab Plasticware/Containers", "Brand: Corning"]
 → {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Query is only an attribute without product type - too ambiguous"}}
 
-Example 6:
+Example 7:
 Query: "Mercedes Scientific"
 Retrieved categories: ["Brand: Mercedes Scientific", "Products/Gloves & Apparel/Gloves", "Products/Pipettes"]
 → {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Query is only a brand name - multiple product categories exist"}}
 
-Example 7:
+Example 8:
 Query: "centrifuge tubes 50ml capacity"
 Retrieved categories: ["Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "Brand": Celltreat"]
 → {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity - exact category match in results"}}
 
-Example 8:
+Example 9:
 Query: "pipettes on sale sorted by price"
 Retrieved categories: ["Products/Pipettes", "Brand: Thermo Fisher"]
 → {{"q": "pipette", "filter_by": "special_price:>0", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Clear product type with sale filter and price sort"}}
