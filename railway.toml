@@ -41,7 +41,17 @@ healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "always"
 
-# Middleware environment configuration
+# Middleware Development environment configuration
+[environments.mw-development]
+[environments.mw-development.build]
+dockerfilePath = "Dockerfile.middleware"
+
+[environments.mw-development.deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "always"
+
+# Middleware Production environment configuration
 [environments.middleware]
 [environments.middleware.build]
 dockerfilePath = "Dockerfile.middleware"
