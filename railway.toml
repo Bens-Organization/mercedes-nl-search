@@ -51,6 +51,16 @@ healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "always"
 
+# Development (backend) environment configuration
+[environments.development]
+[environments.development.build]
+dockerfilePath = "Dockerfile"
+
+[environments.development.deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "always"
+
 # Staging (backend) environment configuration
 [environments.staging]
 [environments.staging.build]
