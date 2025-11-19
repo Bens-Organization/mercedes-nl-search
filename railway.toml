@@ -1,82 +1,35 @@
 # Railway Configuration - Multi-Service Setup
 #
-# ✅ ENVIRONMENT-SPECIFIC CONFIGURATION
-#
-# This configuration supports MULTIPLE services in different environments:
-#
-# 1. Middleware Service (web):
-#    - Environment: middleware
-#    - Dockerfile: Dockerfile.middleware
-#    - URL: https://web-production-a5d93.up.railway.app
-#    - Purpose: OpenAI-compatible middleware for Typesense NL
-#
-# 2. Backend Service - Production (mercedes-nl-search):
-#    - Environment: production
-#    - Dockerfile: Dockerfile
-#    - URL: https://mercedes-nl-search-production.up.railway.app
-#    - Purpose: FastAPI REST API (Production)
-#
-# 3. Backend Service - Staging (mercedes-nl-search):
-#    - Environment: staging
-#    - Dockerfile: Dockerfile
-#    - URL: https://mercedes-nl-search-staging.up.railway.app
-#    - Purpose: FastAPI REST API (Testing)
-#
-# How it works:
-# - Railway reads environment-specific config based on which environment is deploying
-# - No manual UI overrides needed!
-# - All services use correct Dockerfiles automatically
+# Two services share this config:
+# 1. Backend Service: development, staging, production (uses Dockerfile)
+# 2. Middleware Service: mw-development, mw-staging, middleware (uses Dockerfile.middleware)
 
 # Default build configuration
 [build]
 builder = "dockerfile"
 
-# Development (backend) environment configuration
-[environments.development]
+# Shared deploy configuration (applies to all environments)
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "always"
+
+# Backend environments (use default Dockerfile)
 [environments.development.build]
 dockerfilePath = "Dockerfile"
 
-[environments.development.deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "always"
-
-# Middleware Development environment configuration
-[environments.mw-development]
-[environments.mw-development.build]
-dockerfilePath = "Dockerfile.middleware"
-
-[environments.mw-development.deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "always"
-
-# Middleware Production environment configuration
-[environments.middleware]
-[environments.middleware.build]
-dockerfilePath = "Dockerfile.middleware"
-
-[environments.middleware.deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "always"
-
-# Staging (backend) environment configuration
-[environments.staging]
 [environments.staging.build]
 dockerfilePath = "Dockerfile"
 
-[environments.staging.deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "always"
-
-# Production (backend) environment configuration
-[environments.production]
 [environments.production.build]
 dockerfilePath = "Dockerfile"
 
-[environments.production.deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "always"
+# Middleware environments (use Dockerfile.middleware)
+[environments.mw-development.build]
+dockerfilePath = "Dockerfile.middleware"
+
+[environments.mw-staging.build]
+dockerfilePath = "Dockerfile.middleware"
+
+[environments.middleware.build]
+dockerfilePath = "Dockerfile.middleware"
