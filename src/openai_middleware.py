@@ -498,7 +498,7 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", u
     return openai_response
 
 
-def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75, for_typesense_nl: bool = True) -> Dict[str, Any]:
+def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75, for_typesense_nl: bool = True, retrieved_products: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Apply category filter to search parameters if LLM is confident.
 
@@ -506,13 +506,15 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
     1. Parses the LLM response content (JSON with search parameters)
     2. Extracts detected_category and category_confidence
     3. If confident (>= threshold), injects category filter into filter_by
-    4. Returns modified response
+    4. Detects broad queries that span multiple subcategories and uses partial matching
+    5. Returns modified response
 
     Args:
         openai_response: Raw OpenAI API response
         confidence_threshold: Minimum confidence to apply filter (default: 0.75)
         for_typesense_nl: If True, removes custom metadata fields and applies category to filter_by
                           If False, keeps metadata for decoupled architecture (default: True)
+        retrieved_products: Optional list of retrieved products for multi-subcategory detection
 
     Returns:
         Modified OpenAI response with category filter applied (if confident)
@@ -544,25 +546,79 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             print(f"[MODE] Typesense NL integration mode - applying category to filter_by")
 
             if detected_category and category_confidence >= confidence_threshold:
-                # Remove backticks from category (if present), then re-wrap in backticks for Typesense
-                # Backticks are required to escape special characters like & in category names
+                # Remove backticks from category (if present)
                 escaped_category = detected_category.replace("`", "")
-                category_filter = f"categories:=`{escaped_category}`"
+
+                # Detect if this is a broad query spanning multiple subcategories
+                # Example: "alcohol" query retrieves both "Ethyl Alcohol" and "Isopropyl Alcohol"
+                use_partial_match = False
+                category_suffix = None
+
+                if retrieved_products:
+                    # Collect all "Products/" categories from retrieved products
+                    # Note: Categories use "Products / " format (with spaces)
+                    retrieved_categories = set()
+                    for product in retrieved_products:
+                        for cat in product.get('categories', []):
+                            # Check for both "Products/" and "Products / " formats
+                            if cat.startswith('Products/') or cat.startswith('Products /'):
+                                retrieved_categories.add(cat)
+
+                    # Check if we have multiple subcategories with a common suffix
+                    # E.g., "Products / Chemicals & Stains / Ethyl Alcohol" and
+                    #       "Products / Chemicals & Stains / Isopropyl Alcohol"
+                    # Both end with "Alcohol" and share the same parent
+
+                    # Extract the suffix from detected category (last word of last segment)
+                    # "Products / Chemicals & Stains / Ethyl Alcohol" → "Alcohol"
+                    # "Products / Gloves" → "Gloves"
+                    parts = escaped_category.split('/')
+                    if len(parts) >= 2:
+                        last_segment = parts[-1].strip()
+                        # Get the last word from the segment (handles "Ethyl Alcohol" → "Alcohol")
+                        last_words = last_segment.split()
+                        detected_suffix = last_words[-1] if last_words else last_segment
+                        detected_parent = '/'.join(parts[:-1]).strip()
+
+                        # Count how many categories share the same parent and have suffix in their name
+                        # Example: Both "Ethyl Alcohol" and "Isopropyl Alcohol" have "Alcohol"
+                        matching_subcats = [
+                            cat for cat in retrieved_categories
+                            if cat.startswith(detected_parent) and detected_suffix.lower() in cat.lower()
+                        ]
+
+                        if len(matching_subcats) >= 2:
+                            # Multiple subcategories detected! Use partial match
+                            use_partial_match = True
+                            category_suffix = detected_suffix
+                            print(f"[RAG] ⚠️  Broad query detected - found {len(matching_subcats)} categories with '{detected_suffix}':")
+                            for cat in matching_subcats:
+                                print(f"[RAG]     - {cat}")
+
+                # Create appropriate filter based on detection
+                if use_partial_match and category_suffix:
+                    # Use partial match to include all subcategories
+                    # This allows "alcohol" to match "Ethyl Alcohol", "Isopropyl Alcohol", etc.
+                    category_filter = f"categories:*{category_suffix}*"
+                    print(f"[RAG] ✅ Partial match filter applied: '*{category_suffix}*'")
+                else:
+                    # Use exact match for specific queries
+                    # Backticks required to escape special characters like & in category names
+                    category_filter = f"categories:=`{escaped_category}`"
+                    print(f"[RAG] ✅ Exact match filter applied: '{escaped_category}'")
 
                 # Get existing filters
                 existing_filter = params.get("filter_by", "").strip()
 
                 # Remove any existing category filters to avoid duplicates
                 filter_parts = [part.strip() for part in existing_filter.split('&&') if part.strip()]
-                filter_parts = [part for part in filter_parts if not part.startswith('categories:=')]
+                filter_parts = [part for part in filter_parts if not part.startswith('categories:')]
 
                 # Add category filter at the beginning
                 if filter_parts:
                     params["filter_by"] = f"{category_filter} && {' && '.join(filter_parts)}"
                 else:
                     params["filter_by"] = category_filter
-
-                print(f"[RAG] ✅ Category filter applied: '{escaped_category}'")
             else:
                 print(f"[RAG] ❌ Category filter NOT applied (low confidence or null)")
 
@@ -785,7 +841,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         # - no context (Typesense NL) → remove metadata for compatibility
         for_typesense_nl = request.context is None
         print(f"[MODE] {'Typesense NL integration' if for_typesense_nl else 'Decoupled architecture'} (context={'not provided' if for_typesense_nl else 'provided'})")
-        openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl)
+        openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl, retrieved_products=products)
 
         # 9. EXIT LOGGING: Show exact response being sent to Typesense
         response_body = json.dumps(openai_response)
