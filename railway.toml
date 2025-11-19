@@ -31,10 +31,10 @@
 [build]
 builder = "dockerfile"
 
-# Development (middleware) environment configuration
+# Development (backend) environment configuration
 [environments.development]
 [environments.development.build]
-dockerfilePath = "Dockerfile.middleware"
+dockerfilePath = "Dockerfile"
 
 [environments.development.deploy]
 healthcheckPath = "/health"
@@ -47,16 +47,6 @@ restartPolicyType = "always"
 dockerfilePath = "Dockerfile.middleware"
 
 [environments.middleware.deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "always"
-
-# Development (backend) environment configuration
-[environments.development]
-[environments.development.build]
-dockerfilePath = "Dockerfile"
-
-[environments.development.deploy]
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "always"
