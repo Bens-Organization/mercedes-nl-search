@@ -225,7 +225,7 @@ class Search:
             "approach": "typesense_nl",
             "original_query": query,
             "nl_model_id": Config.NL_MODEL_ID,
-            "middleware_url": "https://web-development-middleware.up.railway.app",  # Updated to new middleware
+            "middleware_url": Config.MIDDLEWARE_URL,
             "results_found": total_found,
             "results_returned": len(products),  # Updated count after size filtering
         }

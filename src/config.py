@@ -26,6 +26,9 @@ class Config:
     # Multiple environments can share the same model if they use the same collection
     NL_MODEL_ID = os.getenv("NL_MODEL_ID", f"middleware-rag-{os.getenv('TYPESENSE_COLLECTION_NAME', 'mercedes_products')}")
 
+    # Middleware URL for RAG processing
+    MIDDLEWARE_URL = os.getenv("MIDDLEWARE_URL", "https://web-production-a5d93.up.railway.app")
+
     # Mercedes GraphQL
     MERCEDES_GRAPHQL_URL = os.getenv(
         "MERCEDES_GRAPHQL_URL",
