@@ -31,6 +31,16 @@
 [build]
 builder = "dockerfile"
 
+# Development (middleware) environment configuration
+[environments.development]
+[environments.development.build]
+dockerfilePath = "Dockerfile.middleware"
+
+[environments.development.deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "always"
+
 # Middleware environment configuration
 [environments.middleware]
 [environments.middleware.build]
