@@ -20,11 +20,18 @@ class Config:
     TYPESENSE_PROTOCOL = os.getenv("TYPESENSE_PROTOCOL", "http")
     TYPESENSE_API_KEY = os.getenv("TYPESENSE_API_KEY")
     TYPESENSE_COLLECTION_NAME = os.getenv("TYPESENSE_COLLECTION_NAME", "mercedes_products")
-    # NL Search Model ID (collection-based, not environment-based)
-    # Format: middleware-rag-{collection_name}
-    # Examples: "middleware-rag-mercedes_products", "middleware-rag-mercedes_magento"
-    # Multiple environments can share the same model if they use the same collection
-    NL_MODEL_ID = os.getenv("NL_MODEL_ID", f"middleware-rag-{os.getenv('TYPESENSE_COLLECTION_NAME', 'mercedes_products')}")
+
+    # Server Configuration (with backward compatibility)
+    ENVIRONMENT = os.getenv("ENVIRONMENT") or os.getenv("FLASK_ENV", "development")
+    SERVER_PORT = int(os.getenv("SERVER_PORT") or os.getenv("FLASK_PORT", "5001"))
+
+    # NL Search Model ID (environment + collection based)
+    # Format: middleware-rag-{environment}-{collection_name}
+    # Examples: "middleware-rag-development-mercedes_magento", "middleware-rag-staging-mercedes_magento"
+    # Each environment should have its own model pointing to its middleware URL
+    _default_collection = os.getenv('TYPESENSE_COLLECTION_NAME', 'mercedes_products')
+    _default_env = os.getenv("ENVIRONMENT") or os.getenv("FLASK_ENV", "development")
+    NL_MODEL_ID = os.getenv("NL_MODEL_ID", f"middleware-rag-{_default_env}-{_default_collection}")
 
     # Middleware URL for RAG processing
     MIDDLEWARE_URL = os.getenv("MIDDLEWARE_URL", "https://web-production-a5d93.up.railway.app")
@@ -34,10 +41,6 @@ class Config:
         "MERCEDES_GRAPHQL_URL",
         "https://www.mercedesscientific.com/graphql"
     )
-
-    # Server Configuration (with backward compatibility)
-    ENVIRONMENT = os.getenv("ENVIRONMENT") or os.getenv("FLASK_ENV", "development")
-    SERVER_PORT = int(os.getenv("SERVER_PORT") or os.getenv("FLASK_PORT", "5001"))
 
     # Restricted Items Configuration
     RESTRICTED_BRANDS = os.getenv("RESTRICTED_BRANDS", "Beckman Coulter,Olympus").split(",")

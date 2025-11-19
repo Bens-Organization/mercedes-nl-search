@@ -5,30 +5,36 @@ The middleware provides RAG-based category classification + filter extraction.
 
 Must be run before using nl_query=true with middleware integration.
 
-IMPORTANT: Models are registered PER COLLECTION, not per environment.
-Multiple environments can share the same model if they use the same collection.
+IMPORTANT: Models are registered PER ENVIRONMENT + COLLECTION.
+Each environment (dev/staging/prod) should have its own model pointing to its middleware.
 
 Usage:
-    # Register default model (uses TYPESENSE_COLLECTION_NAME from env)
-    python src/setup_middleware_model.py
+    # Register model for current environment (uses ENVIRONMENT + TYPESENSE_COLLECTION_NAME from env)
+    ENVIRONMENT=staging MIDDLEWARE_URL=https://web-mw-staging.up.railway.app python src/setup_middleware_model.py
 
-    # Register model for specific collection
-    python src/setup_middleware_model.py mercedes_products
-    python src/setup_middleware_model.py mercedes_magento
+    # Or specify environment and collection explicitly
+    python src/setup_middleware_model.py mercedes_magento staging
 
     # Check model status
     python src/setup_middleware_model.py check
-    python src/setup_middleware_model.py check mercedes_products
 
 Example Setup:
-    # Register one model per unique collection
-    python src/setup_middleware_model.py mercedes_products
-    python src/setup_middleware_model.py mercedes_magento
+    # Development environment
+    ENVIRONMENT=development MIDDLEWARE_URL=https://web-development-middleware.up.railway.app python src/setup_middleware_model.py
+    # Creates model: middleware-rag-development-mercedes_magento
 
-    # Multiple backends can share models:
-    # - Staging backend: NL_MODEL_ID=middleware-rag-mercedes_products
-    # - Demo backend: NL_MODEL_ID=middleware-rag-mercedes_magento
-    # - Production backend: NL_MODEL_ID=middleware-rag-mercedes_products (shares with staging!)
+    # Staging environment
+    ENVIRONMENT=staging MIDDLEWARE_URL=https://web-mw-staging.up.railway.app python src/setup_middleware_model.py
+    # Creates model: middleware-rag-staging-mercedes_magento
+
+    # Production environment
+    ENVIRONMENT=production MIDDLEWARE_URL=https://web-production-middleware.up.railway.app python src/setup_middleware_model.py
+    # Creates model: middleware-rag-production-mercedes_magento
+
+Then set NL_MODEL_ID in each backend environment:
+    - Development: NL_MODEL_ID=middleware-rag-development-mercedes_magento
+    - Staging: NL_MODEL_ID=middleware-rag-staging-mercedes_magento
+    - Production: NL_MODEL_ID=middleware-rag-production-mercedes_magento
 """
 import typesense
 import requests
@@ -38,26 +44,31 @@ from config import Config
 Config.validate()
 
 
-def setup_middleware_model(collection_name: str = None):
+def setup_middleware_model(collection_name: str = None, environment: str = None):
     """Register middleware as NL search model with Typesense.
 
-    Models are registered PER COLLECTION (not per environment).
-    Multiple environments using the same collection can share one model.
+    Models can be registered PER ENVIRONMENT + COLLECTION.
+    This allows dev/staging/prod to use different middleware URLs.
 
     Args:
         collection_name: Typesense collection name (e.g., 'mercedes_products', 'mercedes_magento')
                          If not specified, uses Config.TYPESENSE_COLLECTION_NAME
+        environment: Environment name (e.g., 'development', 'staging', 'production')
+                     If not specified, uses Config.ENVIRONMENT
     """
     # Build Typesense URL
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
 
-    # Use provided collection or fall back to config
+    # Use provided values or fall back to config
     if collection_name is None:
         collection_name = Config.TYPESENSE_COLLECTION_NAME
 
-    # Build model ID based on collection name
-    # This ensures one model per collection (not per environment)
-    model_id = f"middleware-rag-{collection_name}"
+    if environment is None:
+        environment = Config.ENVIRONMENT
+
+    # Build model ID based on environment + collection name
+    # This ensures separate models per environment
+    model_id = f"middleware-rag-{environment}-{collection_name}"
 
     # Build API URL with collection parameter
     api_url = f"{Config.MIDDLEWARE_URL}/v1/chat/completions?collection={collection_name}"
@@ -156,21 +167,26 @@ def setup_middleware_model(collection_name: str = None):
         raise
 
 
-def check_model_status(collection_name: str = None):
+def check_model_status(collection_name: str = None, environment: str = None):
     """Check if middleware model exists and is configured.
 
     Args:
         collection_name: Collection name (e.g., 'mercedes_products', 'mercedes_magento')
                          If not specified, uses Config.TYPESENSE_COLLECTION_NAME
+        environment: Environment name (e.g., 'development', 'staging', 'production')
+                     If not specified, uses Config.ENVIRONMENT
     """
     base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
 
-    # Use provided collection or fall back to config
+    # Use provided values or fall back to config
     if collection_name is None:
         collection_name = Config.TYPESENSE_COLLECTION_NAME
 
-    # Build model ID based on collection name
-    model_id = f"middleware-rag-{collection_name}"
+    if environment is None:
+        environment = Config.ENVIRONMENT
+
+    # Build model ID based on environment + collection name
+    model_id = f"middleware-rag-{environment}-{collection_name}"
 
     headers = {
         "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
@@ -214,20 +230,22 @@ if __name__ == "__main__":
         if command == "check":
             # Check model status for collection
             collection_name = sys.argv[2] if len(sys.argv) > 2 else None
-            check_model_status(collection_name)
+            environment = sys.argv[3] if len(sys.argv) > 3 else None
+            check_model_status(collection_name, environment)
         else:
-            # Setup model for collection
+            # Setup model for collection and optional environment
             collection_name = sys.argv[1]
-            setup_middleware_model(collection_name)
+            environment = sys.argv[2] if len(sys.argv) > 2 else None
+            setup_middleware_model(collection_name, environment)
     else:
         # Default: setup model with config values
         print("\nUsage:")
-        print("  python src/setup_middleware_model.py                    # Default (from env)")
-        print("  python src/setup_middleware_model.py mercedes_products  # For specific collection")
-        print("  python src/setup_middleware_model.py mercedes_magento   # For another collection")
-        print("  python src/setup_middleware_model.py check              # Check default")
-        print("  python src/setup_middleware_model.py check mercedes_products  # Check specific")
-        print("\nIMPORTANT: One model per collection (not per environment)")
-        print("Multiple environments can share the same model if they use the same collection.")
+        print("  python src/setup_middleware_model.py                         # Default (from env)")
+        print("  python src/setup_middleware_model.py mercedes_magento        # Specific collection")
+        print("  python src/setup_middleware_model.py mercedes_magento staging # Collection + environment")
+        print("  python src/setup_middleware_model.py check                   # Check default")
+        print("  python src/setup_middleware_model.py check mercedes_magento staging # Check specific")
+        print("\nIMPORTANT: Models are per ENVIRONMENT + COLLECTION")
+        print("Each environment needs its own model pointing to its middleware URL.")
         print("\nSetting up default model...\n")
         setup_middleware_model()
