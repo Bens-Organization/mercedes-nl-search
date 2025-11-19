@@ -577,15 +577,25 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
 
                 if retrieved_products:
                     # Find exact match from retrieved categories (case-insensitive, space-insensitive)
+                    # Support both exact match and suffix match (for categories with prefixes like "Root Catalog")
                     normalized_lower = normalized_category.lower().replace(" ", "").replace("/", "")
                     for product in retrieved_products:
                         for cat in product.get('categories', []):
                             cat_normalized = cat.lower().replace(" ", "").replace("/", "")
-                            if cat_normalized == normalized_lower and cat.startswith('Products'):
-                                # Found exact match! Use the ACTUAL category string
+
+                            # Try exact match first (e.g., "Products/Gloves" == "Products/Gloves")
+                            if cat_normalized == normalized_lower:
                                 escaped_category = cat
-                                print(f"[RAG] ✅ Matched LLM category '{normalized_category}' to actual '{cat}'")
+                                print(f"[RAG] ✅ Exact match: '{normalized_category}' → '{cat}'")
                                 break
+
+                            # Try suffix match (e.g., "Cryotomy&Grossing/Cassettes" matches "RootCatalog/Cryotomy&Grossing/Cassettes")
+                            elif cat_normalized.endswith(normalized_lower):
+                                # Verify this is a real product category (not Brand, Size, Color)
+                                if cat.startswith('Products') or cat.startswith('Root Catalog'):
+                                    escaped_category = cat
+                                    print(f"[RAG] ✅ Suffix match: '{normalized_category}' → '{cat}'")
+                                    break
 
                 # Detect if this is a broad query spanning multiple subcategories
                 # Example: "alcohol" query retrieves both "Ethyl Alcohol" and "Isopropyl Alcohol"
