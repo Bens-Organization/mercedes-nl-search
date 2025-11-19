@@ -518,7 +518,7 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", u
     return openai_response
 
 
-def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75, for_typesense_nl: bool = True, retrieved_products: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold: float = 0.75, for_typesense_nl: bool = True, retrieved_products: List[Dict[str, Any]] = None, user_query: str = None) -> Dict[str, Any]:
     """
     Apply category filter to search parameters if LLM is confident.
 
@@ -535,6 +535,7 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         for_typesense_nl: If True, removes custom metadata fields and applies category to filter_by
                           If False, keeps metadata for decoupled architecture (default: True)
         retrieved_products: Optional list of retrieved products for multi-subcategory detection
+        user_query: Optional user query for context-aware pattern matching
 
     Returns:
         Modified OpenAI response with category filter applied (if confident)
@@ -653,17 +654,34 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
                             if cat.startswith(detected_parent) and last_word.lower() in cat.lower()
                         ]
 
-                        # Prefer compound suffix if it matches more categories
+                        # Check if this is a storage-related query (context-aware)
+                        # Only apply compound pattern for explicit storage queries to avoid false matches
+                        is_storage_query = False
+                        storage_keywords = ['storage', 'box', 'cabinet', 'holder', 'mailer', 'organizer', 'container', 'rack', 'drawer']
+
+                        if user_query:
+                            query_lower = user_query.lower()
+                            is_storage_query = any(keyword in query_lower for keyword in storage_keywords)
+                            print(f"[RAG] 🔍 Query context check: storage_query={is_storage_query} (query='{user_query}')")
+
+                        # Prefer compound suffix ONLY if query explicitly mentions storage
+                        # This prevents "microscope slide" from matching all "Slide *" storage categories
                         if compound_suffix and len(compound_matching) >= 2:
-                            use_partial_match = True
-                            category_suffix = compound_suffix
-                            print(f"[RAG] ⚠️  Broad query detected - using compound pattern '{compound_suffix} *'")
+                            if is_storage_query:
+                                use_partial_match = True
+                                category_suffix = compound_suffix
+                                print(f"[RAG] ⚠️  Storage-related broad query - using compound pattern '{compound_suffix} *'")
+                            else:
+                                print(f"[RAG] ℹ️  Compound pattern available but query NOT storage-related - using exact match")
                         elif len(single_matching) >= 2:
-                            use_partial_match = True
-                            category_suffix = last_word
-                            print(f"[RAG] ⚠️  Broad query detected - found {len(single_matching)} categories with '{last_word}':")
-                            for cat in single_matching[:5]:
-                                print(f"[RAG]     - {cat}")
+                            if is_storage_query:
+                                use_partial_match = True
+                                category_suffix = last_word
+                                print(f"[RAG] ⚠️  Storage-related broad query - found {len(single_matching)} categories with '{last_word}':")
+                                for cat in single_matching[:5]:
+                                    print(f"[RAG]     - {cat}")
+                            else:
+                                print(f"[RAG] ℹ️  Partial pattern available but query NOT storage-related - using exact match")
 
                 # Create appropriate filter based on detection
                 if use_partial_match and category_suffix:
@@ -854,7 +872,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
 
                 # Apply category filter to cached response (for consistent formatting)
                 for_typesense_nl = request.context is None
-                cached_response = apply_category_filter(cached_response, for_typesense_nl=for_typesense_nl)
+                cached_response = apply_category_filter(cached_response, for_typesense_nl=for_typesense_nl, user_query=user_query)
 
                 # EXIT LOGGING
                 response_body = json.dumps(cached_response)
@@ -911,7 +929,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         # - no context (Typesense NL) → remove metadata for compatibility
         for_typesense_nl = request.context is None
         print(f"[MODE] {'Typesense NL integration' if for_typesense_nl else 'Decoupled architecture'} (context={'not provided' if for_typesense_nl else 'provided'})")
-        openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl, retrieved_products=products)
+        openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl, retrieved_products=products, user_query=user_query)
 
         # 9. EXIT LOGGING: Show exact response being sent to Typesense
         response_body = json.dumps(openai_response)
