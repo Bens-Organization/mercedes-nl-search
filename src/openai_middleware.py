@@ -654,34 +654,47 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
                             if cat.startswith(detected_parent) and last_word.lower() in cat.lower()
                         ]
 
-                        # Check if this is a storage-related query (context-aware)
-                        # Only apply compound pattern for explicit storage queries to avoid false matches
-                        is_storage_query = False
-                        storage_keywords = ['storage', 'box', 'cabinet', 'holder', 'mailer', 'organizer', 'container', 'rack', 'drawer']
+                        # Check if detected category is under Storage parent
+                        # For Storage categories, require explicit storage keywords to avoid false matches
+                        # For non-Storage categories (e.g., Chemicals), allow partial matching freely
+                        is_storage_category = '/storage/' in detected_parent.lower() or detected_parent.lower().endswith('storage')
 
-                        if user_query:
-                            query_lower = user_query.lower()
-                            is_storage_query = any(keyword in query_lower for keyword in storage_keywords)
-                            print(f"[RAG] 🔍 Query context check: storage_query={is_storage_query} (query='{user_query}')")
+                        if is_storage_category:
+                            # Storage categories: require storage keywords in query
+                            storage_keywords = ['storage', 'box', 'cabinet', 'holder', 'mailer', 'organizer', 'container', 'rack', 'drawer']
+                            is_storage_query = False
 
-                        # Prefer compound suffix ONLY if query explicitly mentions storage
-                        # This prevents "microscope slide" from matching all "Slide *" storage categories
-                        if compound_suffix and len(compound_matching) >= 2:
-                            if is_storage_query:
+                            if user_query:
+                                query_lower = user_query.lower()
+                                is_storage_query = any(keyword in query_lower for keyword in storage_keywords)
+                                print(f"[RAG] 🔍 Storage category detected - checking query for storage keywords: {is_storage_query} (query='{user_query}')")
+
+                            # Apply compound pattern ONLY if query mentions storage
+                            if compound_suffix and len(compound_matching) >= 2:
+                                if is_storage_query:
+                                    use_partial_match = True
+                                    category_suffix = compound_suffix
+                                    print(f"[RAG] ⚠️  Storage query confirmed - using compound pattern '{compound_suffix} *'")
+                                else:
+                                    print(f"[RAG] ℹ️  Storage category but query NOT storage-related - using exact match (prevents 'microscope slide' → all Slide* storage)")
+                            elif len(single_matching) >= 2:
+                                if is_storage_query:
+                                    use_partial_match = True
+                                    category_suffix = last_word
+                                    print(f"[RAG] ⚠️  Storage query confirmed - using partial pattern '*{last_word}*'")
+                                else:
+                                    print(f"[RAG] ℹ️  Storage category but query NOT storage-related - using exact match")
+                        else:
+                            # Non-Storage categories: allow partial matching freely
+                            # This keeps "alcohol" → "*Alcohol*" working for Ethyl/Isopropyl Alcohol
+                            if compound_suffix and len(compound_matching) >= 2:
                                 use_partial_match = True
                                 category_suffix = compound_suffix
-                                print(f"[RAG] ⚠️  Storage-related broad query - using compound pattern '{compound_suffix} *'")
-                            else:
-                                print(f"[RAG] ℹ️  Compound pattern available but query NOT storage-related - using exact match")
-                        elif len(single_matching) >= 2:
-                            if is_storage_query:
+                                print(f"[RAG] ⚠️  Non-storage broad query - using compound pattern '{compound_suffix} *'")
+                            elif len(single_matching) >= 2:
                                 use_partial_match = True
                                 category_suffix = last_word
-                                print(f"[RAG] ⚠️  Storage-related broad query - found {len(single_matching)} categories with '{last_word}':")
-                                for cat in single_matching[:5]:
-                                    print(f"[RAG]     - {cat}")
-                            else:
-                                print(f"[RAG] ℹ️  Partial pattern available but query NOT storage-related - using exact match")
+                                print(f"[RAG] ⚠️  Non-storage broad query - using partial pattern '*{last_word}*'")
 
                 # Create appropriate filter based on detection
                 if use_partial_match and category_suffix:
