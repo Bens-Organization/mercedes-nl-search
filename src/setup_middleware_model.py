@@ -37,9 +37,6 @@ from config import Config
 # Validate configuration
 Config.validate()
 
-# Middleware URL (production)
-MIDDLEWARE_URL = "https://web-production-a5d93.up.railway.app"
-
 
 def setup_middleware_model(collection_name: str = None):
     """Register middleware as NL search model with Typesense.
@@ -63,7 +60,7 @@ def setup_middleware_model(collection_name: str = None):
     model_id = f"middleware-rag-{collection_name}"
 
     # Build API URL with collection parameter
-    api_url = f"{MIDDLEWARE_URL}/v1/chat/completions?collection={collection_name}"
+    api_url = f"{Config.MIDDLEWARE_URL}/v1/chat/completions?collection={collection_name}"
 
     # Model configuration pointing to middleware (using vLLM provider)
     model_config = {
@@ -79,7 +76,7 @@ def setup_middleware_model(collection_name: str = None):
     print("Setting up Middleware Model for Typesense NL Search")
     print("=" * 70)
     print(f"Typesense URL: {base_url}")
-    print(f"Middleware URL: {MIDDLEWARE_URL}")
+    print(f"Middleware URL: {Config.MIDDLEWARE_URL}")
     print(f"Model ID: {model_id}")
     print(f"Model Name: {model_config['model_name']}")
     print(f"Collection: {collection_name}")
@@ -155,7 +152,7 @@ def setup_middleware_model(collection_name: str = None):
         print("\nTroubleshooting:")
         print("  1. Check your Typesense version (need v29.0+)")
         print("  2. Ensure middleware is deployed and accessible")
-        print(f"  3. Test middleware: curl {MIDDLEWARE_URL}/health")
+        print(f"  3. Test middleware: curl {Config.MIDDLEWARE_URL}/health")
         raise
 
 
