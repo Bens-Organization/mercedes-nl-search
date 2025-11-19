@@ -620,27 +620,49 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
                     # Extract the suffix from detected category (last word of last segment)
                     # "Products / Chemicals & Stains / Ethyl Alcohol" → "Alcohol"
                     # "Products / Gloves" → "Gloves"
+                    # "Products / Storage / Slide Boxes" → check both "Slide" and "Boxes"
                     parts = escaped_category.split('/')
                     if len(parts) >= 2:
                         last_segment = parts[-1].strip()
-                        # Get the last word from the segment (handles "Ethyl Alcohol" → "Alcohol")
                         last_words = last_segment.split()
-                        detected_suffix = last_words[-1] if last_words else last_segment
                         detected_parent = '/'.join(parts[:-1]).strip()
 
-                        # Count how many categories share the same parent and have suffix in their name
-                        # Example: Both "Ethyl Alcohol" and "Isopropyl Alcohol" have "Alcohol"
-                        matching_subcats = [
+                        # Check for compound category names (e.g., "Slide Boxes", "Test Tubes")
+                        # Try both first word (for "Slide *" pattern) and last word (for "* Alcohol" pattern)
+                        compound_suffix = None
+                        single_suffix = None
+
+                        if len(last_words) >= 2:
+                            # Compound name: try first word pattern (e.g., "Slide *")
+                            first_word = last_words[0]
+                            compound_matching = [
+                                cat for cat in retrieved_categories
+                                if cat.startswith(detected_parent) and cat.split('/')[-1].strip().startswith(first_word)
+                            ]
+                            if len(compound_matching) >= 2:
+                                compound_suffix = first_word
+                                print(f"[RAG] 🔍 Compound category detected: '{first_word} *' pattern")
+                                print(f"[RAG]    Found {len(compound_matching)} categories:")
+                                for cat in compound_matching[:5]:
+                                    print(f"[RAG]      - {cat}")
+
+                        # Also try last word pattern (e.g., "* Alcohol", "* Boxes")
+                        last_word = last_words[-1] if last_words else last_segment
+                        single_matching = [
                             cat for cat in retrieved_categories
-                            if cat.startswith(detected_parent) and detected_suffix.lower() in cat.lower()
+                            if cat.startswith(detected_parent) and last_word.lower() in cat.lower()
                         ]
 
-                        if len(matching_subcats) >= 2:
-                            # Multiple subcategories detected! Use partial match
+                        # Prefer compound suffix if it matches more categories
+                        if compound_suffix and len(compound_matching) >= 2:
                             use_partial_match = True
-                            category_suffix = detected_suffix
-                            print(f"[RAG] ⚠️  Broad query detected - found {len(matching_subcats)} categories with '{detected_suffix}':")
-                            for cat in matching_subcats:
+                            category_suffix = compound_suffix
+                            print(f"[RAG] ⚠️  Broad query detected - using compound pattern '{compound_suffix} *'")
+                        elif len(single_matching) >= 2:
+                            use_partial_match = True
+                            category_suffix = last_word
+                            print(f"[RAG] ⚠️  Broad query detected - found {len(single_matching)} categories with '{last_word}':")
+                            for cat in single_matching[:5]:
                                 print(f"[RAG]     - {cat}")
 
                 # Create appropriate filter based on detection
