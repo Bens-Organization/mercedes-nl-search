@@ -705,19 +705,132 @@ class MagentoProductIndexer:
         normalized = " ".join(normalized.split())
         return normalized
 
-    def _calculate_brand_priority(self, brand: str, product_name: str = None) -> int:
-        """Calculate brand priority (same as Neon indexer)."""
+    def _detect_category_type(self, categories: List[str]) -> str:
+        """
+        Detect the category type for brand ranking.
+
+        Returns:
+            - "lcms_hplc" for LCMS/HPLC Solvents
+            - "drug_testing" for Drug Testing products
+            - "general" for all other products
+        """
+        if not categories:
+            return "general"
+
+        # Check categories for LCMS/HPLC indicators
+        for cat in categories:
+            cat_lower = cat.lower()
+            # Check for LCMS/HPLC grade indicators
+            if any(grade in cat for grade in ["Grade: HPLC", "Grade: LCMS", "Grade: Ultra HPLC"]):
+                return "lcms_hplc"
+            # Check for Drug Testing category
+            if "drug test" in cat_lower:
+                return "drug_testing"
+
+        return "general"
+
+    def _calculate_brand_priority(self, sku: str, brand: str, product_name: str, categories: List[str]) -> int:
+        """
+        Calculate brand priority for sorting based on category and brand.
+
+        Priority structure varies by category:
+
+        **LCMS/HPLC Solvents** (detected by Grade: HPLC/LCMS in categories):
+            100 - Concord Technologies
+            90  - Birch Biotech
+            80  - Mercedes Scientific
+            70  - Tanner Scientific
+            50  - Other brands
+            0   - No brand
+
+        **Drug Testing** (detected by "Drug Test" in categories):
+            100 - Mercedes Scientific
+            90  - AllTest
+            80  - Tanner Scientific
+            70  - Healgen
+            60  - Wondfo
+            50  - Other brands
+            0   - No brand
+
+        **General** (all other categories):
+            100 - Mercedes Scientific
+            90  - Tanner Scientific
+            50  - Other brands
+            0   - No brand
+
+        Args:
+            sku: Product SKU
+            brand: Brand name from database
+            product_name: Product name (used as fallback)
+            categories: List of category paths
+
+        Returns:
+            Priority score (higher = more important)
+        """
+        # Detect category type
+        category_type = self._detect_category_type(categories)
+
+        # Use brand field (already available from Magento)
         brand_lower = (brand or "").lower().strip()
         name_lower = (product_name or "").lower().strip()
 
-        if "mercedes scientific" in brand_lower or "mercedes scientific" in name_lower:
-            return 100
-        elif "tanner scientific" in brand_lower or "tanner scientific" in name_lower:
-            return 90
-        elif brand:
-            return 50
-        else:
+        # Fallback: check product name if brand not available
+        detected_brand = brand_lower
+        if not detected_brand:
+            if "mercedes scientific" in name_lower:
+                detected_brand = "mercedes scientific"
+            elif "tanner scientific" in name_lower:
+                detected_brand = "tanner scientific"
+            elif "concord" in name_lower:
+                detected_brand = "concord technologies"
+            elif "birch" in name_lower and "biotech" in name_lower:
+                detected_brand = "birch biotech"
+            elif "alltest" in name_lower:
+                detected_brand = "alltest"
+            elif "healgen" in name_lower:
+                detected_brand = "healgen"
+            elif "wondfo" in name_lower:
+                detected_brand = "wondfo"
+
+        if not detected_brand:
             return 0
+
+        # LCMS/HPLC Solvents category
+        if category_type == "lcms_hplc":
+            if "concord" in detected_brand:
+                return 100
+            elif "birch" in detected_brand:
+                return 90
+            elif "mercedes scientific" in detected_brand:
+                return 80
+            elif "tanner scientific" in detected_brand:
+                return 70
+            else:
+                return 50
+
+        # Drug Testing category
+        elif category_type == "drug_testing":
+            if "mercedes scientific" in detected_brand:
+                return 100
+            elif "alltest" in detected_brand:
+                return 90
+            elif "tanner scientific" in detected_brand:
+                return 80
+            elif "healgen" in detected_brand:
+                return 70
+            elif "wondfo" in detected_brand:
+                return 60
+            else:
+                return 50
+
+        # General (all other categories)
+        else:
+            if "mercedes scientific" in detected_brand:
+                return 100
+            elif "tanner scientific" in detected_brand:
+                return 90
+            else:
+                return 50 if detected_brand else 0
 
     def _clean_html(self, html: str) -> str:
         """Remove HTML tags."""
@@ -727,6 +840,65 @@ class MagentoProductIndexer:
         clean = re.sub('<[^<]+?>', '', html)
         clean = clean.strip()
         return clean[:500] if len(clean) > 500 else clean
+
+    def _clean_and_deduplicate_categories(self, raw_categories: List[str]) -> List[str]:
+        """
+        Clean and deduplicate category names.
+
+        Removes "Root Catalog / Mercedes Scientific Main Store /" prefix and deduplicates categories
+        that have the same end path (e.g., multiple "Shop By Lab" variations).
+        Prefers shorter, more direct paths (Products over Shop By Lab).
+        """
+        if not raw_categories:
+            return []
+
+        # Step 1: Clean category names by removing prefix
+        cleaned = []
+        for cat in raw_categories:
+            # Remove the "Root Catalog / Mercedes Scientific Main Store /" prefix
+            cleaned_cat = cat.replace("Root Catalog / Mercedes Scientific Main Store / ", "")
+            # Fallback for variations
+            cleaned_cat = cleaned_cat.replace("Root Catalog/Mercedes Scientific Main Store/", "")
+            cleaned_cat = cleaned_cat.replace("Mercedes Scientific Main Store/", "")
+            cleaned_cat = cleaned_cat.replace("Root Catalog/", "")
+            cleaned_cat = cleaned_cat.replace("Default Category / ", "")
+            if cleaned_cat:
+                cleaned.append(cleaned_cat)
+
+        # Step 2: Deduplicate by end path
+        # Keep track of end paths we've seen (after last '/')
+        seen_end_paths = {}
+        unique_categories = []
+
+        for cat in cleaned:
+            # Extract the end path (e.g., "Specimen Collection/Cytology")
+            parts = cat.split('/')
+
+            # Consider the last 2 segments as the "end path" for deduplication
+            # This handles cases like "Products/Gloves" vs "Shop By Lab/Chemistry/Gloves"
+            if len(parts) >= 2:
+                end_path = '/'.join(parts[-2:])
+            else:
+                end_path = cat
+
+            # If we haven't seen this end path, or if this is a shorter path, keep it
+            if end_path not in seen_end_paths:
+                seen_end_paths[end_path] = cat
+                unique_categories.append(cat)
+            else:
+                # If this path is shorter, replace the existing one
+                existing = seen_end_paths[end_path]
+                if len(cat) < len(existing):
+                    # Remove the old one and add the new shorter one
+                    if existing in unique_categories:
+                        unique_categories.remove(existing)
+                    seen_end_paths[end_path] = cat
+                    unique_categories.append(cat)
+
+        # Step 3: Sort to have "Products" paths first, then others
+        unique_categories.sort(key=lambda x: (not x.startswith('Products/'), len(x), x))
+
+        return unique_categories
 
     def _decode_multiselect_from_dict(self, option_ids_str: str, option_values: Dict[str, str]) -> str:
         """
@@ -769,9 +941,10 @@ class MagentoProductIndexer:
             physical_form_decoded = self._decode_multiselect_from_dict(physical_form, option_values)
             restricted_class_decoded = self._decode_multiselect_from_dict(restricted_class, option_values)
 
-            # Fetch categories from pre-loaded dictionary
+            # Fetch categories from pre-loaded dictionary and clean them
             # This eliminates N+1 queries - all categories were loaded in batch queries
-            categories = all_categories.get(entity_id, [])
+            raw_categories = all_categories.get(entity_id, [])
+            categories = self._clean_and_deduplicate_categories(raw_categories)
 
             # Stock status - check both is_in_stock flag and qty
             # If qty is 0 or None, mark as OUT_OF_STOCK regardless of is_in_stock flag
@@ -808,8 +981,8 @@ class MagentoProductIndexer:
                 except:
                     pass
 
-            # Brand priority
-            brand_priority = self._calculate_brand_priority(brand, name)
+            # Brand priority (category-aware)
+            brand_priority = self._calculate_brand_priority(sku, brand, name, categories)
 
             # In-stock priority for sorting (in-stock products appear first)
             in_stock_priority = 1 if stock_status == "IN_STOCK" else 0
