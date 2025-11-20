@@ -177,14 +177,18 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         # Solution: No category field + HIGH retrieval limit (60) + rely on LLM to pick correct category
         #
         # Trade-off: LLM must classify from diverse but potentially noisy results
+        #
+        # FIX: Reduce typo tolerance to prevent "gloves" matching "glasses"
+        # Previous: num_typos=2 allowed too many false matches (gloves→glasses)
+        # New: num_typos=1 for stricter matching while still handling real typos
         search_params = {
             "q": query,
             "query_by": "name,sku,name_normalized,sku_normalized,description,short_description",
-            "query_by_weights": "100,100,4,4,5,5",  # No category weight
+            "query_by_weights": "100,100,4,4,5,5",  # Balanced weights
             "text_match_type": "max_score",  # Cumulative scoring
             "per_page": limit * 3,  # Retrieve 60 products for maximum diversity
             "prefix": "true,true,true,true,false,false",
-            "num_typos": 2,
+            "num_typos": 1,  # Reduced from 2 to prevent "gloves"→"glasses" false matches
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
             "sort_by": "_text_match:desc",
