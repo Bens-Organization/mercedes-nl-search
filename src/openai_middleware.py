@@ -170,16 +170,19 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         return []
 
     try:
-        # FIX: Broader retrieval without category bias
-        # Strategy: Retrieve diverse products and let LLM classify the correct category
-        # Removed ONLY categories field to prevent storage products from dominating results
-        # Kept SKU fields for model number searches (e.g., "TNR700S", "blu touch")
+        # FIX: Maximum diversity retrieval strategy
+        # Remove categories from search, retrieve many products (60) for LLM to classify
+        #
+        # Problem: ANY category weight causes storage products to dominate "slide" searches
+        # Solution: No category field + HIGH retrieval limit (60) + rely on LLM to pick correct category
+        #
+        # Trade-off: LLM must classify from diverse but potentially noisy results
         search_params = {
             "q": query,
             "query_by": "name,sku,name_normalized,sku_normalized,description,short_description",
-            "query_by_weights": "100,100,4,4,5,5",  # Prioritize name and SKU, lower weight for normalized/descriptions
-            "text_match_type": "max_score",  # Use cumulative score (not just max field)
-            "per_page": limit * 2,  # Retrieve MORE products for better diversity (40 instead of 20)
+            "query_by_weights": "100,100,4,4,5,5",  # No category weight
+            "text_match_type": "max_score",  # Cumulative scoring
+            "per_page": limit * 3,  # Retrieve 60 products for maximum diversity
             "prefix": "true,true,true,true,false,false",
             "num_typos": 2,
             "typo_tokens_threshold": 1,
