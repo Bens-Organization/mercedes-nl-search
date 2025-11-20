@@ -177,6 +177,14 @@ class MagentoProductIndexer:
             attribute_ids = self._get_attribute_ids(cursor)
             print(f"✓ Found {len(attribute_ids)} product attributes")
 
+            # Pre-load ALL option values for performance (avoids N+1 queries)
+            print("\n⏳ Loading option values lookup table...")
+            import time
+            option_start = time.time()
+            option_values = self._load_all_option_values(cursor)
+            option_time = time.time() - option_start
+            print(f"✓ Loaded {len(option_values):,} option values in {option_time:.1f}s")
+
             # Build query to fetch products from EAV structure
             # This is complex because Magento stores attributes across multiple tables
             query = self._build_product_query(attribute_ids, limit)
@@ -187,22 +195,48 @@ class MagentoProductIndexer:
             else:
                 print("Fetching all products")
 
-            import time
             query_start = time.time()
             cursor.execute(query)
             query_time = time.time() - query_start
-            print(f"✓ Query executed in {query_time:.1f}s\n")
+            print(f"✓ Query executed in {query_time:.1f}s")
 
-            # Fetch and transform products
-            print("⏳ Transforming products...")
+            # Fetch all rows first
+            rows = cursor.fetchall()
+            total_rows = len(rows)
+            print(f"✓ Retrieved {total_rows:,} products from database\n")
+
+            # Batch fetch categories for all products (avoids N+1 queries)
+            print("⏳ Batch loading categories...")
+            cat_start = time.time()
+            entity_ids = [row[0] for row in rows]
+            all_categories = self._batch_get_categories(cursor, entity_ids)
+            cat_time = time.time() - cat_start
+            print(f"✓ Loaded categories for {len(all_categories):,} products in {cat_time:.1f}s\n")
+
+            cursor.close()
+
+            # Transform products (using pre-loaded data)
+            print(f"⏳ Transforming {total_rows:,} products...")
             products = []
 
-            for row in cursor.fetchall():
-                product = self._transform_magento_product(row, attribute_ids)
+            start_time = time.time()
+            last_report = start_time
+
+            for idx, row in enumerate(rows):
+                product = self._transform_magento_product(row, attribute_ids, option_values, all_categories)
                 if product:
                     products.append(product)
 
-            cursor.close()
+                # Progress report every 1000 products or every 5 seconds
+                current_time = time.time()
+                if (idx + 1) % 1000 == 0 or (current_time - last_report) >= 5:
+                    elapsed = current_time - start_time
+                    rate = (idx + 1) / elapsed if elapsed > 0 else 0
+                    percent = ((idx + 1) / total_rows * 100)
+                    eta = (total_rows - idx - 1) / rate if rate > 0 else 0
+                    print(f"  Progress: {idx + 1:,}/{total_rows:,} ({percent:.1f}%) - {rate:.0f} products/sec - ETA: {eta:.0f}s")
+                    last_report = current_time
+
             conn.close()
 
             print(f"\n{'='*60}")
@@ -214,6 +248,112 @@ class MagentoProductIndexer:
         except Exception as e:
             print(f"✗ Error fetching from Magento: {e}")
             raise
+
+    def _load_all_option_values(self, cursor) -> Dict[str, str]:
+        """
+        Pre-load ALL option values to avoid N+1 queries during transformation.
+
+        Returns a dictionary: {option_id: text_value}
+        """
+        query = """
+            SELECT option_id, value
+            FROM eav_attribute_option_value
+            WHERE store_id = 0
+        """
+        cursor.execute(query)
+
+        option_values = {}
+        for option_id, value in cursor.fetchall():
+            option_values[str(option_id)] = value
+
+        return option_values
+
+    def _batch_get_categories(self, cursor, entity_ids: List[int]) -> Dict[int, List[str]]:
+        """
+        Batch fetch categories for multiple products to avoid N+1 queries.
+
+        Returns a dictionary: {entity_id: [category_paths]}
+        """
+        if not entity_ids:
+            return {}
+
+        # Get category name attribute ID
+        cursor.execute("""
+            SELECT attribute_id
+            FROM eav_attribute
+            WHERE entity_type_id = (
+                SELECT entity_type_id
+                FROM eav_entity_type
+                WHERE entity_type_code = 'catalog_category'
+            )
+            AND attribute_code = 'name'
+        """)
+
+        result = cursor.fetchone()
+        if not result:
+            return {}
+
+        cat_name_attr_id = result[0]
+
+        # Fetch all product-category relationships
+        placeholders = ','.join(['%s'] * len(entity_ids))
+        query = f"""
+            SELECT cp.product_id, c.path, c.entity_id
+            FROM catalog_category_product cp
+            JOIN catalog_category_entity c ON cp.category_id = c.entity_id
+            WHERE cp.product_id IN ({placeholders})
+        """
+
+        cursor.execute(query, entity_ids)
+        product_categories = {}
+
+        for product_id, path, category_id in cursor.fetchall():
+            if product_id not in product_categories:
+                product_categories[product_id] = []
+            product_categories[product_id].append(path)
+
+        # Fetch all category names in one query
+        # Get unique category IDs from all paths
+        all_category_ids = set()
+        for paths in product_categories.values():
+            for path in paths:
+                category_ids = path.split('/')
+                all_category_ids.update(category_ids)
+
+        if not all_category_ids:
+            return {}
+
+        # Fetch category names
+        cat_id_list = list(all_category_ids)
+        placeholders = ','.join(['%s'] * len(cat_id_list))
+        query = f"""
+            SELECT entity_id, value
+            FROM catalog_category_entity_varchar
+            WHERE entity_id IN ({placeholders})
+            AND attribute_id = %s
+            AND store_id = 0
+        """
+
+        cursor.execute(query, cat_id_list + [cat_name_attr_id])
+        category_names = {}
+        for cat_id, name in cursor.fetchall():
+            category_names[str(cat_id)] = name
+
+        # Build final category paths (include full path from root)
+        result = {}
+        for product_id, paths in product_categories.items():
+            category_paths = []
+            for path in paths:
+                category_ids = path.split('/')
+                # Include all categories in path (including root catalog and store)
+                names = [category_names.get(cat_id, '') for cat_id in category_ids if category_names.get(cat_id)]
+                if names:
+                    category_paths.append(' / '.join(names))
+
+            if category_paths:
+                result[product_id] = category_paths
+
+        return result
 
     def _get_attribute_ids(self, cursor) -> Dict[str, int]:
         """
@@ -227,7 +367,7 @@ class MagentoProductIndexer:
             'price', 'special_price', 'url_key', 'image',
             'weight', 'status', 'visibility',
             'brand', 'size', 'color', 'physical_form', 'cas_number',
-            'created_at', 'updated_at'
+            'restricted_class', 'created_at', 'updated_at'
         ]
 
         query = """
@@ -259,13 +399,14 @@ class MagentoProductIndexer:
         This joins:
         - catalog_product_entity (main product table)
         - catalog_product_entity_varchar (text attributes)
-        - catalog_product_entity_int (integer attributes)
+        - catalog_product_entity_int (integer attributes - with option value decoding)
         - catalog_product_entity_decimal (price attributes)
+        - catalog_product_entity_text (text attributes - with option value decoding for multiselect)
         - cataloginventory_stock_item (stock status)
-        - catalog_category_product (categories)
+        - eav_attribute_option_value (to decode option IDs to text values)
         """
 
-        # Base query
+        # Base query with proper option value JOINs
         query = """
             SELECT DISTINCT
                 e.entity_id,
@@ -298,26 +439,37 @@ class MagentoProductIndexer:
                 -- Weight (decimal)
                 weight_attr.value as weight,
 
-                -- Status (int) - 1=enabled, 2=disabled
-                status_attr.value as status,
+                -- Status (int) - decoded to text
+                status_option.value as status,
 
-                -- Visibility (int)
-                visibility_attr.value as visibility,
+                -- Visibility (int) - decoded to text
+                visibility_option.value as visibility,
 
                 -- Stock status
                 stock.is_in_stock,
                 stock.qty,
 
-                -- Custom attributes
-                brand_attr.value as brand,
-                size_attr.value as size,
-                color_attr.value as color,
+                -- Brand (int) - decoded to text
+                brand_option.value as brand,
+
+                -- Size (int) - decoded to text
+                size_option.value as size,
+
+                -- Color (int) - decoded to text
+                color_option.value as color,
+
+                -- Physical form (text multiselect) - raw value (decode in Python)
                 physical_form_attr.value as physical_form,
-                cas_attr.value as cas_number
+
+                -- CAS number (int multiselect) - raw value (decode in Python)
+                cas_attr.value as cas_number,
+
+                -- Restricted class (text multiselect) - raw value (decode in Python)
+                restricted_attr.value as restricted_class
 
             FROM catalog_product_entity e
 
-            -- Join attribute tables (default store view = 0)
+            -- Join varchar attributes
             LEFT JOIN catalog_product_entity_varchar name_attr
                 ON e.entity_id = name_attr.entity_id
                 AND name_attr.attribute_id = {name_id}
@@ -328,6 +480,12 @@ class MagentoProductIndexer:
                 AND url_attr.attribute_id = {url_key_id}
                 AND url_attr.store_id = 0
 
+            LEFT JOIN catalog_product_entity_varchar image_attr
+                ON e.entity_id = image_attr.entity_id
+                AND image_attr.attribute_id = {image_id}
+                AND image_attr.store_id = 0
+
+            -- Join text attributes
             LEFT JOIN catalog_product_entity_text desc_attr
                 ON e.entity_id = desc_attr.entity_id
                 AND desc_attr.attribute_id = {description_id}
@@ -338,6 +496,17 @@ class MagentoProductIndexer:
                 AND short_desc_attr.attribute_id = {short_description_id}
                 AND short_desc_attr.store_id = 0
 
+            LEFT JOIN catalog_product_entity_text physical_form_attr
+                ON e.entity_id = physical_form_attr.entity_id
+                AND physical_form_attr.attribute_id = {physical_form_id}
+                AND physical_form_attr.store_id = 0
+
+            LEFT JOIN catalog_product_entity_text restricted_attr
+                ON e.entity_id = restricted_attr.entity_id
+                AND restricted_attr.attribute_id = {restricted_class_id}
+                AND restricted_attr.store_id = 0
+
+            -- Join decimal attributes
             LEFT JOIN catalog_product_entity_decimal price_attr
                 ON e.entity_id = price_attr.entity_id
                 AND price_attr.attribute_id = {price_id}
@@ -348,55 +517,66 @@ class MagentoProductIndexer:
                 AND special_price_attr.attribute_id = {special_price_id}
                 AND special_price_attr.store_id = 0
 
-            LEFT JOIN catalog_product_entity_varchar image_attr
-                ON e.entity_id = image_attr.entity_id
-                AND image_attr.attribute_id = {image_id}
-                AND image_attr.store_id = 0
-
             LEFT JOIN catalog_product_entity_decimal weight_attr
                 ON e.entity_id = weight_attr.entity_id
                 AND weight_attr.attribute_id = {weight_id}
                 AND weight_attr.store_id = 0
 
+            -- Join int attributes with option value decoding
+            -- Status
             LEFT JOIN catalog_product_entity_int status_attr
                 ON e.entity_id = status_attr.entity_id
                 AND status_attr.attribute_id = {status_id}
                 AND status_attr.store_id = 0
+            LEFT JOIN eav_attribute_option_value status_option
+                ON status_attr.value = status_option.option_id
+                AND status_option.store_id = 0
 
+            -- Visibility
             LEFT JOIN catalog_product_entity_int visibility_attr
                 ON e.entity_id = visibility_attr.entity_id
                 AND visibility_attr.attribute_id = {visibility_id}
                 AND visibility_attr.store_id = 0
+            LEFT JOIN eav_attribute_option_value visibility_option
+                ON visibility_attr.value = visibility_option.option_id
+                AND visibility_option.store_id = 0
+
+            -- Brand
+            LEFT JOIN catalog_product_entity_int brand_attr
+                ON e.entity_id = brand_attr.entity_id
+                AND brand_attr.attribute_id = {brand_id}
+                AND brand_attr.store_id = 0
+            LEFT JOIN eav_attribute_option_value brand_option
+                ON brand_attr.value = brand_option.option_id
+                AND brand_option.store_id = 0
+
+            -- Size
+            LEFT JOIN catalog_product_entity_int size_attr
+                ON e.entity_id = size_attr.entity_id
+                AND size_attr.attribute_id = {size_id}
+                AND size_attr.store_id = 0
+            LEFT JOIN eav_attribute_option_value size_option
+                ON size_attr.value = size_option.option_id
+                AND size_option.store_id = 0
+
+            -- Color
+            LEFT JOIN catalog_product_entity_int color_attr
+                ON e.entity_id = color_attr.entity_id
+                AND color_attr.attribute_id = {color_id}
+                AND color_attr.store_id = 0
+            LEFT JOIN eav_attribute_option_value color_option
+                ON color_attr.value = color_option.option_id
+                AND color_option.store_id = 0
+
+            -- CAS Number (multiselect int - will decode in Python)
+            LEFT JOIN catalog_product_entity_int cas_attr
+                ON e.entity_id = cas_attr.entity_id
+                AND cas_attr.attribute_id = {cas_number_id}
+                AND cas_attr.store_id = 0
 
             -- Stock
             LEFT JOIN cataloginventory_stock_item stock
                 ON e.entity_id = stock.product_id
-
-            -- Custom attributes
-            LEFT JOIN catalog_product_entity_varchar brand_attr
-                ON e.entity_id = brand_attr.entity_id
-                AND brand_attr.attribute_id = {brand_id}
-                AND brand_attr.store_id = 0
-
-            LEFT JOIN catalog_product_entity_varchar size_attr
-                ON e.entity_id = size_attr.entity_id
-                AND size_attr.attribute_id = {size_id}
-                AND size_attr.store_id = 0
-
-            LEFT JOIN catalog_product_entity_varchar color_attr
-                ON e.entity_id = color_attr.entity_id
-                AND color_attr.attribute_id = {color_id}
-                AND color_attr.store_id = 0
-
-            LEFT JOIN catalog_product_entity_varchar physical_form_attr
-                ON e.entity_id = physical_form_attr.entity_id
-                AND physical_form_attr.attribute_id = {physical_form_id}
-                AND physical_form_attr.store_id = 0
-
-            LEFT JOIN catalog_product_entity_varchar cas_attr
-                ON e.entity_id = cas_attr.entity_id
-                AND cas_attr.attribute_id = {cas_number_id}
-                AND cas_attr.store_id = 0
 
             WHERE status_attr.value = 1  -- Only enabled products
             AND visibility_attr.value IN (2, 3, 4)  -- Catalog, Search, Both (not "Not Visible Individually")
@@ -419,12 +599,51 @@ class MagentoProductIndexer:
             color_id=attribute_ids.get('color', {}).get('id', 0),
             physical_form_id=attribute_ids.get('physical_form', {}).get('id', 0),
             cas_number_id=attribute_ids.get('cas_number', {}).get('id', 0),
+            restricted_class_id=attribute_ids.get('restricted_class', {}).get('id', 0),
         )
 
         if limit:
             query += f" LIMIT {limit}"
 
         return query
+
+    def _decode_multiselect_options(self, cursor, option_ids_str: str, attribute_id: int) -> str:
+        """
+        Decode multiselect option IDs to text values.
+
+        Multiselect attributes store option IDs as comma-separated text (e.g., "619,620,621").
+        This method converts them to readable text (e.g., "Normal, FORENSIC USE ONLY").
+
+        Args:
+            cursor: MySQL cursor
+            option_ids_str: Comma-separated option IDs (e.g., "619,620")
+            attribute_id: Attribute ID for validation
+
+        Returns:
+            Comma-separated text values (e.g., "Normal, FORENSIC USE ONLY")
+        """
+        if not option_ids_str:
+            return None
+
+        # Split comma-separated IDs and clean
+        option_ids = [opt_id.strip() for opt_id in str(option_ids_str).split(',') if opt_id.strip()]
+
+        if not option_ids:
+            return None
+
+        # Build query to get option text values
+        placeholders = ','.join(['%s'] * len(option_ids))
+        query = f"""
+            SELECT value
+            FROM eav_attribute_option_value
+            WHERE option_id IN ({placeholders})
+            AND store_id = 0
+        """
+
+        cursor.execute(query, option_ids)
+        text_values = [row[0] for row in cursor.fetchall() if row[0]]
+
+        return ', '.join(text_values) if text_values else None
 
     def _get_product_categories(self, cursor, product_id: int) -> List[str]:
         """Fetch category names for a product."""
@@ -509,21 +728,65 @@ class MagentoProductIndexer:
         clean = clean.strip()
         return clean[:500] if len(clean) > 500 else clean
 
-    def _transform_magento_product(self, row, attribute_ids: Dict[str, int]) -> Dict[str, Any]:
-        """Transform Magento database row to Typesense document."""
+    def _decode_multiselect_from_dict(self, option_ids_str: str, option_values: Dict[str, str]) -> str:
+        """
+        Decode multiselect option IDs to text values using pre-loaded dictionary.
+
+        Args:
+            option_ids_str: Comma-separated option IDs (e.g., "619,620")
+            option_values: Pre-loaded dictionary mapping option_id -> text value
+
+        Returns:
+            Comma-separated text values (e.g., "Normal, FORENSIC USE ONLY")
+        """
+        if not option_ids_str:
+            return None
+
+        # Split comma-separated IDs and clean
+        option_ids = [opt_id.strip() for opt_id in str(option_ids_str).split(',') if opt_id.strip()]
+
+        if not option_ids:
+            return None
+
+        # Lookup text values from pre-loaded dictionary
+        text_values = [option_values.get(opt_id) for opt_id in option_ids if option_values.get(opt_id)]
+
+        return ', '.join(text_values) if text_values else None
+
+    def _transform_magento_product(self, row, attribute_ids: Dict[str, int],
+                                   option_values: Dict[str, str],
+                                   all_categories: Dict[int, List[str]]) -> Dict[str, Any]:
+        """Transform Magento database row to Typesense document using pre-loaded data."""
         try:
             (entity_id, sku, type_id, created_at, updated_at,
              name, url_key, description, short_description,
              price, special_price, image, weight, status, visibility,
-             is_in_stock, qty, brand, size, color, physical_form, cas_number) = row
+             is_in_stock, qty, brand, size, color, physical_form, cas_number, restricted_class) = row
 
-            # Stock status
-            stock_status = "IN_STOCK" if is_in_stock == 1 else "OUT_OF_STOCK"
+            # Decode multiselect options using pre-loaded option_values dictionary
+            # This eliminates N+1 queries - all option values were loaded in a single query
+            cas_number_decoded = self._decode_multiselect_from_dict(cas_number, option_values)
+            physical_form_decoded = self._decode_multiselect_from_dict(physical_form, option_values)
+            restricted_class_decoded = self._decode_multiselect_from_dict(restricted_class, option_values)
 
-            # Image URL
+            # Fetch categories from pre-loaded dictionary
+            # This eliminates N+1 queries - all categories were loaded in batch queries
+            categories = all_categories.get(entity_id, [])
+
+            # Stock status - check both is_in_stock flag and qty
+            # If qty is 0 or None, mark as OUT_OF_STOCK regardless of is_in_stock flag
+            stock_status = "OUT_OF_STOCK"
+            if is_in_stock == 1 and qty and qty > 0:
+                stock_status = "IN_STOCK"
+
+            # Image URL (remove cache-busting suffix from filename)
             image_url = None
             if image and image != 'no_selection':
-                image_url = f"https://www.mercedesscientific.com/media/catalog/product{image}"
+                # Remove cache-busting suffix (e.g., _p6kzqxuyof13syl4 before extension)
+                # Pattern: /path/filename_randomchars.ext -> /path/filename.ext
+                import re
+                clean_image = re.sub(r'_[a-z0-9]{16}(\.[a-zA-Z]+)$', r'\1', image)
+                image_url = f"https://www.mercedesscientific.com/media/catalog/product{clean_image}"
 
             # Clean descriptions
             description_clean = self._clean_html(description) if description else None
@@ -544,10 +807,6 @@ class MagentoProductIndexer:
                     updated_ts = int(updated_at.timestamp())
                 except:
                     pass
-
-            # Categories (fetch separately due to complexity)
-            # For now, use empty list - you can implement category fetching later
-            categories = []
 
             # Brand priority
             brand_priority = self._calculate_brand_priority(brand, name)
@@ -571,23 +830,24 @@ class MagentoProductIndexer:
                 "special_price": float(special_price) if special_price else None,
                 "currency": "USD",
                 "image_url": image_url,
-                "categories": categories,
+                "categories": categories,  # Now actually fetching categories!
                 "brand": brand,
                 "brand_priority": brand_priority,
                 "size": size,
                 "color": color,
-                "physical_form": physical_form,
-                "cas_number": cas_number,
+                "physical_form": physical_form_decoded,  # Decoded from option IDs
+                "cas_number": cas_number_decoded,  # Decoded from option IDs
                 "qty": float(qty) if qty else None,
                 "weight": float(weight) if weight else None,
                 "created_at": created_ts,
                 "updated_at": updated_ts,
-                # Restriction field (Magento doesn't have this, so set to None)
-                "restricted_class": None,
+                "restricted_class": restricted_class_decoded,  # Decoded from option IDs
             }
 
         except Exception as e:
             print(f"  ⚠ Error transforming product {row[1] if len(row) > 1 else 'unknown'}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def index_products(self, products: List[Dict[str, Any]], batch_size: int = 100):
