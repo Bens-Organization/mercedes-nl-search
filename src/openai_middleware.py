@@ -176,7 +176,7 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         # Kept SKU fields for model number searches (e.g., "TNR700S", "blu touch")
         search_params = {
             "q": query,
-            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description",  # Removed categories only
+            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description",
             "query_by_weights": "100,100,4,4,5,5",  # Prioritize name and SKU, lower weight for normalized/descriptions
             "text_match_type": "max_score",  # Use cumulative score (not just max field)
             "per_page": limit * 2,  # Retrieve MORE products for better diversity (40 instead of 20)
