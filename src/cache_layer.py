@@ -305,15 +305,24 @@ class CacheLayer:
             from langcache import LangCache
 
             # Detect queries with filters using static patterns (defined at module level)
-            # Filter queries use exact matching to prevent "$50" matching "$6"
+            # Filter queries use hash-based exact matching to prevent "$50" matching "$6"
             # Simple queries use semantic matching for better cache hits
             has_filters = any(re.search(pattern, query.lower()) for pattern in FILTER_PATTERNS)
 
-            # Log which matching mode we're using
+            # Prepare query for cache lookup
+            # For filter queries: use hash prefix to force exact matching
+            # For simple queries: use original query for semantic matching
+            cache_query = query
             if has_filters:
-                print(f"[CACHE] Filter detected in query - using exact matching")
+                # Hash the query to create a unique exact-match key
+                # "gloves under $50" → "EXACT:a1b2c3...gloves under $50"
+                # "gloves under $6" → "EXACT:d4e5f6...gloves under $6"
+                # These won't match each other due to different hashes
+                query_hash = hashlib.md5(query.encode()).hexdigest()[:8]
+                cache_query = f"EXACT:{query_hash}:{query}"
+                print(f"[CACHE] Filter detected - using exact matching with hash: {query_hash}")
             else:
-                print(f"[CACHE] No filters detected - using semantic matching")
+                print(f"[CACHE] No filters - using semantic matching")
 
             def _search_sync():
                 """Synchronous search using SDK"""
@@ -322,14 +331,8 @@ class CacheLayer:
                     cache_id=LANGCACHE_CACHE_ID,
                     api_key=LANGCACHE_API_KEY
                 ) as lang_cache:
-                    if has_filters:
-                        # Filter query: use exact matching
-                        # "gloves under $50" won't match "gloves under $6"
-                        result = lang_cache.search(prompt=query, exact_match=True)
-                    else:
-                        # Simple query: use semantic matching
-                        # "nitrile gloves" can match "nitrile glove" or "NBR gloves"
-                        result = lang_cache.search(prompt=query)
+                    # Use modified query for cache lookup
+                    result = lang_cache.search(prompt=cache_query)
                     return result
 
             # Run SDK call in thread pool (SDK is sync, we're async)
@@ -355,7 +358,23 @@ class CacheLayer:
         """Cache response in Redis LangCache using official SDK"""
         try:
             import asyncio
+            import re
             from langcache import LangCache
+
+            # Detect queries with filters (same logic as _get_from_langcache)
+            has_filters = any(re.search(pattern, query.lower()) for pattern in FILTER_PATTERNS)
+
+            # Prepare query for cache storage
+            # For filter queries: use hash prefix to force exact matching
+            # For simple queries: use original query for semantic matching
+            cache_query = query
+            if has_filters:
+                # Hash the query to create a unique exact-match key
+                query_hash = hashlib.md5(query.encode()).hexdigest()[:8]
+                cache_query = f"EXACT:{query_hash}:{query}"
+                print(f"[CACHE] Caching filter query with hash: {query_hash}")
+            else:
+                print(f"[CACHE] Caching simple query with semantic matching")
 
             def _set_sync():
                 """Synchronous set using SDK"""
@@ -371,7 +390,7 @@ class CacheLayer:
                     # ttlMillis is optional (None = no expiration)
                     ttl_ms = REDIS_CACHE_TTL * 1000 if REDIS_CACHE_TTL > 0 else None
                     result = lang_cache.set(
-                        prompt=query,
+                        prompt=cache_query,
                         response=response_str,
                         ttl_millis=ttl_ms
                     )
