@@ -53,6 +53,45 @@ LANGCACHE_API_KEY = os.getenv("LANGCACHE_API_KEY", "")
 # OpenAI for embeddings (DIY mode)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+# Filter detection patterns for conditional cache matching
+# Queries with these patterns use exact matching to prevent filter collisions
+# Based on Typesense filter parameters: https://typesense.org/docs/29.0/api/search.html#filter-parameters
+FILTER_PATTERNS = [
+    # Price filters (exact amounts and comparisons)
+    r'\$\d+',                           # Explicit price: $50, $6, $100
+    r'\d+\s*dollars?',                  # "50 dollars", "6 dollar"
+    r'(under|below|less\s+than)\s*\$',  # "under $50", "below $6", "less than $100"
+    r'(over|above|more\s+than)\s*\$',   # "over $50", "above $6", "more than $100"
+    r'between\s*\$',                    # "between $10 and $50"
+    r'(cheaper|less\s+expensive)',      # "cheaper than", "less expensive"
+    r'(pricier|more\s+expensive)',      # "pricier than", "more expensive"
+
+    # Stock status filters
+    r'in\s+stock',                      # "in stock"
+    r'out\s+of\s+stock',                # "out of stock"
+    r'available',                       # "available"
+    r'unavailable',                     # "unavailable"
+
+    # Sale/discount filters
+    r'on\s+sale',                       # "on sale"
+    r'discounted',                      # "discounted"
+    r'(sale|discount)\s+price',         # "sale price", "discount price"
+
+    # Sorting keywords (price-based)
+    r'cheapest',                        # "cheapest"
+    r'most\s+expensive',                # "most expensive"
+    r'lowest\s+price',                  # "lowest price"
+    r'highest\s+price',                 # "highest price"
+    r'sorted?\s+by\s+price',            # "sort by price", "sorted by price"
+
+    # Temporal filters (date-based)
+    r'latest',                          # "latest"
+    r'newest',                          # "newest"
+    r'recent',                          # "recent"
+    r'new\s+arrivals?',                 # "new arrivals", "new arrival"
+    r'just\s+(arrived|added)',          # "just arrived", "just added"
+]
+
 
 class CacheMetrics:
     """Track cache performance metrics"""
@@ -263,7 +302,19 @@ class CacheLayer:
         """Get cached response from Redis LangCache using official SDK"""
         try:
             import asyncio
+            import re
             from langcache import LangCache
+
+            # Detect queries with filters using static patterns (defined at module level)
+            # Filter queries use exact matching to prevent "$50" matching "$6"
+            # Simple queries use semantic matching for better cache hits
+            has_filters = any(re.search(pattern, query.lower()) for pattern in FILTER_PATTERNS)
+
+            # Log which matching mode we're using
+            if has_filters:
+                print(f"[CACHE] Filter detected in query - using exact matching")
+            else:
+                print(f"[CACHE] No filters detected - using semantic matching")
 
             def _search_sync():
                 """Synchronous search using SDK"""
@@ -272,7 +323,14 @@ class CacheLayer:
                     cache_id=LANGCACHE_CACHE_ID,
                     api_key=LANGCACHE_API_KEY
                 ) as lang_cache:
-                    result = lang_cache.search(prompt=query)
+                    if has_filters:
+                        # Filter query: use exact matching
+                        # "gloves under $50" won't match "gloves under $6"
+                        result = lang_cache.search(prompt=query, exact_match=True)
+                    else:
+                        # Simple query: use semantic matching
+                        # "nitrile gloves" can match "nitrile glove" or "NBR gloves"
+                        result = lang_cache.search(prompt=query)
                     return result
 
             # Run SDK call in thread pool (SDK is sync, we're async)
