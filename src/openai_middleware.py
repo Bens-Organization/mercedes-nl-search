@@ -304,12 +304,25 @@ def build_enriched_prompt(
 **Category Classification (RAG Approach)** - SKIP if SKU detected:
 - Look at the categories in the retrieved products above
 - Pick the category that BEST matches the user's query intent
-- **PREFER MORE SPECIFIC CATEGORIES**: If multiple category paths exist, choose the LONGEST/MOST SPECIFIC one
-  - Example: For "cassettes", prefer "Cryotomy & Grossing / Cassettes" over "Products / Embedding"
-  - Example: For "test tubes", prefer "Glass & Plasticware / Tubes / Test Tubes" over "Glass & Plasticware"
+
+**Parent vs Specific Category Selection** (CRITICAL - Check First):
+- **Use PARENT category** when:
+  - Query is BROAD/GENERIC without modifiers (e.g., "stains", "gloves", "tubes", "slides")
+  - Retrieved products are SPREAD across MANY subcategories with NO dominant subcategory
+  - Top subcategory has less than 30% of total products in that category family
+  - Example: "stains" → many stain types retrieved → use "Products / Chemicals & Stains" (parent)
+  - Example: "gloves" → nitrile, latex, vinyl gloves → use "Products / Gloves & Apparel / Gloves" (parent)
+
+- **Use SPECIFIC subcategory** when:
+  - Query has SPECIFIC modifiers (e.g., "gram stain", "nitrile gloves", "microscope slides")
+  - Retrieved products are CONCENTRATED in ONE subcategory
+  - Top subcategory has 50%+ of products OR query explicitly mentions that subcategory
+  - Example: "gram stain" → mostly Gram products → use "Products / Chemicals & Stains / Gram" (specific)
+  - Example: "nitrile gloves" → mostly nitrile → use "Products / Gloves & Apparel / Gloves" (parent is fine, no nitrile subcategory)
+  - Example: "cassettes" → mostly cassette products → use "Cryotomy & Grossing / Cassettes" (specific)
+
 - ONLY choose categories that start with "Products/" OR contain specific product types (e.g., "Cassettes", "Gloves")
 - SKIP categories that start with "Brand:", "Size:", "Color:" (these are attributes, not categories)
-- SKIP broad parent categories if more specific subcategories exist
 - If no good match exists, return null
 
 **Specificity Rules** (CRITICAL for avoiding accessory contamination):
@@ -437,6 +450,21 @@ Example 9:
 Query: "pipettes on sale sorted by price"
 Retrieved categories: ["Products/Pipettes", "Brand: Thermo Fisher"]
 → {{"q": "pipette", "filter_by": "special_price:>0", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Clear product type with sale filter and price sort"}}
+
+Example 10 - Broad query, use PARENT category:
+Query: "stains"
+Retrieved categories: ["Products/Chemicals & Stains/Gram" (3 products), "Products/Chemicals & Stains/Eosin" (3 products), "Products/Chemicals & Stains/Alcian Blue" (3 products), "Products/Reagents/IHC/Antibodies" (15 products)]
+→ {{"q": "stain", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Chemicals & Stains", "category_confidence": 0.85, "category_reasoning": "Broad query with products spread across many stain subcategories (Gram, Eosin, Alcian Blue, etc.) - using parent category to include all stain types. Ignored Antibodies category as it's reagents, not stains."}}
+
+Example 11 - Specific query, use SPECIFIC subcategory:
+Query: "gram stain"
+Retrieved categories: ["Products/Chemicals & Stains/Gram" (12 products), "Products/Chemicals & Stains/Eosin" (2 products)]
+→ {{"q": "gram stain", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Chemicals & Stains / Gram", "category_confidence": 0.95, "category_reasoning": "Specific query for 'gram stain' with majority of products in Gram subcategory - using specific subcategory"}}
+
+Example 12 - Broad query, use PARENT category:
+Query: "gloves"
+Retrieved categories: ["Products/Gloves & Apparel/Gloves" (mix of nitrile, latex, vinyl), "Brand: Ansell", "Brand: Medline"]
+→ {{"q": "glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Gloves & Apparel / Gloves", "category_confidence": 0.85, "category_reasoning": "Broad query with mixed glove types - using parent Gloves category to include all glove materials"}}
 
 Note: Middleware will automatically prepend "in_stock_priority:desc,brand_priority:desc" to all sort_by values!
 """
