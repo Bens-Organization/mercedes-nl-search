@@ -55,7 +55,6 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Filter detection patterns for conditional cache matching
 # Queries with these patterns use exact matching to prevent filter collisions
-# Based on Typesense filter parameters: https://typesense.org/docs/29.0/api/search.html#filter-parameters
 FILTER_PATTERNS = [
     # Price filters (exact amounts and comparisons)
     r'\$\d+',                           # Explicit price: $50, $6, $100
