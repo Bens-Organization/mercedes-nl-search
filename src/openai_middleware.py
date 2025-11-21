@@ -909,12 +909,14 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         user_query = extract_query_from_messages(request.messages)
 
         # 2. CHECK CACHE FIRST (before RAG retrieval)
+        # Cache stores FINAL response (after apply_category_filter) for consistency
         try:
             cache = get_cache()
             cached_response = await cache.get_cached_response(user_query)
 
             if cached_response:
                 # CACHE HIT - return immediately without RAG/OpenAI
+                # Note: Cached response already has category filter applied
                 print(f"[CACHE] ✅ HIT - returning cached response (skipped RAG retrieval)", flush=True)
 
                 # Log cached response content for visibility
@@ -922,10 +924,6 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
                     cached_content = cached_response["choices"][0]["message"]["content"]
                     content_preview = cached_content[:200] if len(cached_content) > 200 else cached_content
                     print(f"[CACHE] Cached response: {content_preview}...", flush=True)
-
-                # Apply category filter to cached response (for consistent formatting)
-                for_typesense_nl = request.context is None
-                cached_response = apply_category_filter(cached_response, for_typesense_nl=for_typesense_nl, user_query=user_query)
 
                 # EXIT LOGGING
                 response_body = json.dumps(cached_response)
@@ -968,21 +966,23 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         # Disable caching in call_openai since we handle it here
         openai_response = await call_openai(enriched_messages, model=request.model, use_cache=False)
 
-        # 7. Cache the response for future queries
-        try:
-            cache = get_cache()
-            await cache.cache_response(user_query, openai_response)
-            print(f"[CACHE] Response cached for future queries", flush=True)
-        except Exception as e:
-            print(f"[CACHE] Caching error (response still returned): {e}", flush=True)
-
-        # 8. Apply category filter if LLM is confident
+        # 7. Apply category filter if LLM is confident
         # Determine mode based on whether context was provided:
         # - context provided (decoupled) → keep metadata for API layer
         # - no context (Typesense NL) → remove metadata for compatibility
         for_typesense_nl = request.context is None
         print(f"[MODE] {'Typesense NL integration' if for_typesense_nl else 'Decoupled architecture'} (context={'not provided' if for_typesense_nl else 'provided'})")
         openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl, retrieved_products=products, user_query=user_query)
+
+        # 8. Cache the FINAL response (after category filter applied) for consistency
+        # CRITICAL FIX (JAI-2202): Cache AFTER apply_category_filter() to ensure
+        # cache MISS and cache HIT produce identical results
+        try:
+            cache = get_cache()
+            await cache.cache_response(user_query, openai_response)
+            print(f"[CACHE] Response cached for future queries", flush=True)
+        except Exception as e:
+            print(f"[CACHE] Caching error (response still returned): {e}", flush=True)
 
         # 9. EXIT LOGGING: Show exact response being sent to Typesense
         response_body = json.dumps(openai_response)
