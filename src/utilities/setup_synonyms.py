@@ -34,178 +34,291 @@ class SynonymManager:
 
     def get_synonym_groups(self) -> List[Dict]:
         """
-        Define synonym groups for scientific/medical products.
+        Define synonym groups based on Magento Live Search production configuration.
 
-        Each group is a set of terms that should match each other.
-        Typesense will expand queries to include all synonyms.
+        Source: Production Magento Live Search synonyms (63 groups)
+        Enhanced with:
+        - JAI-2191: kimwipes ⟷ sciswipe (private label alternative)
+        - JAI-2164: parafin ⟷ paraffin (trademark spelling)
+
+        Total: 64 synonym groups
 
         Categories:
-        - Materials (PTFE/Teflon, PVC/vinyl, etc.)
-        - Equipment (centrifuge/spinner, autoclave/sterilizer)
-        - Measurements (ml/milliliter, mg/milligram)
-        - Common terms (protective/safety, sterile/aseptic)
+        - Medical/Drug Testing (THC, COC, AMP, etc.)
+        - Lab Equipment & Supplies (vaccutainer, commode hat, etc.)
+        - Medical Supplies (charged slides, cassettes, etc.)
+        - Chemicals (isopropyl alcohol, gluteraldehyde, etc.)
+        - Mounting & Staining (OCT, mounting media, etc.)
+        - Medical Tape Types (durapore, micropore, transpore)
+        - Specimen Collection (POC, multistix, etc.)
         """
         return [
-            # Materials & Chemicals
+            # Medical/Drug Testing Acronyms
             {
-                "id": "ptfe-teflon",
-                "synonyms": ["ptfe", "teflon", "polytetrafluoroethylene"]
+                "id": "6-mam-heroin",
+                "synonyms": ["6-MAM", "6MAM", "Heroin"]
             },
             {
-                "id": "pvc-vinyl",
-                "synonyms": ["pvc", "vinyl", "polyvinyl chloride"]
+                "id": "amp-amphetamine",
+                "synonyms": ["AMP", "Amphetamine"]
             },
             {
-                "id": "pe-polyethylene",
-                "synonyms": ["pe", "polyethylene", "polythene"]
+                "id": "bar-barbiturates",
+                "synonyms": ["BAR", "Barbiturates"]
             },
             {
-                "id": "pp-polypropylene",
-                "synonyms": ["pp", "polypropylene"]
+                "id": "bup-buprenorphine",
+                "synonyms": ["BUP", "Suboxone", "Buprenorphine"]
             },
             {
-                "id": "ps-polystyrene",
-                "synonyms": ["ps", "polystyrene", "styrofoam"]
+                "id": "coc-cocaine",
+                "synonyms": ["COC", "Cocaine"]
             },
             {
-                "id": "glass-borosilicate",
-                "synonyms": ["borosilicate", "pyrex", "borosilicate glass"]
+                "id": "cr-creatinine",
+                "synonyms": ["CR", "Creatinine"]
             },
             {
-                "id": "latex-rubber",
-                "synonyms": ["latex", "natural rubber", "rubber"]
+                "id": "etg-alcohol",
+                "synonyms": ["ETG", "Alcohol"]
             },
             {
-                "id": "nitrile-nbr",
-                "synonyms": ["nitrile", "nbr", "nitrile rubber"]
+                "id": "fty-fentanyl",
+                "synonyms": ["FTY", "FEN", "Fentanyl"]
             },
             {
-                "id": "stainless-steel",
-                "synonyms": ["stainless steel", "stainless", "steel", "ss"]
+                "id": "k2-synthetic-marijuana",
+                "synonyms": ["K2", "K2 Spice", "Synthetic Marijuana"]
+            },
+            {
+                "id": "mamp-methamphetamine",
+                "synonyms": ["MAMP", "Methamphetamine", "MET"]
+            },
+            {
+                "id": "mdma-ecstasy",
+                "synonyms": ["MDMA", "Ecstasy"]
+            },
+            {
+                "id": "mtd-methadone",
+                "synonyms": ["MTD", "Methadone", "EDDP"]
+            },
+            {
+                "id": "ni-nitrate",
+                "synonyms": ["NI", "Nitrate"]
+            },
+            {
+                "id": "nicotine-cotinine",
+                "synonyms": ["Nicotine", "Cotinine", "Tobacco", "COT"]
+            },
+            {
+                "id": "opi2000-opiates",
+                "synonyms": ["OPI2000", "OPI", "Opiates"]
+            },
+            {
+                "id": "opi300-morphine",
+                "synonyms": ["OPI300", "MOP", "Morphine", "MOR"]
+            },
+            {
+                "id": "ox-oxidants",
+                "synonyms": ["OX", "Oxidants"]
+            },
+            {
+                "id": "oxy-oxycodone",
+                "synonyms": ["OXY", "Oxycodone"]
+            },
+            {
+                "id": "pcp-phencyclidine",
+                "synonyms": ["PCP", "Phencyclidine"]
+            },
+            {
+                "id": "ppx-propoxyphene",
+                "synonyms": ["PPX", "Propoxyphene"]
+            },
+            {
+                "id": "sg-specific-gravity",
+                "synonyms": ["SG", "Specific Gravity"]
+            },
+            {
+                "id": "tca-tricyclic-antidepressants",
+                "synonyms": ["TCA", "Tricyclic Antidepressants"]
+            },
+            {
+                "id": "thc-marijuana",
+                "synonyms": ["THC", "Marijuana"]
+            },
+            {
+                "id": "tra-tramadol",
+                "synonyms": ["TRA", "Tramadol"]
+            },
+            {
+                "id": "poc-drug-test",
+                "synonyms": ["POC", "UDS", "Drug Test", "DOA"]
             },
 
-            # Equipment & Instruments
+            # Lab Equipment & Supplies
             {
-                "id": "centrifuge",
-                "synonyms": ["centrifuge", "spinner", "microcentrifuge"]
+                "id": "block-trimmer",
+                "synonyms": ["block trimmer", "wax trimmer", "paraffin trimmer"]
             },
             {
-                "id": "autoclave",
-                "synonyms": ["autoclave", "sterilizer", "steam sterilizer"]
+                "id": "chuck-pad",
+                "synonyms": ["Chuck Pad", "Under Pad"]
             },
             {
-                "id": "microscope",
-                "synonyms": ["microscope", "scope", "optical microscope"]
+                "id": "chuck-specimen-disc",
+                "synonyms": ["chuck", "specimen disc", "disc"]
+            },
+            {
+                "id": "coban-cohesive-bandage",
+                "synonyms": ["coban", "cohesive bandage"]
+            },
+            {
+                "id": "commode-hat",
+                "synonyms": ["commode hat", "urine hat", "nun hat", "pee hat", "commode collection", "specimen hat"]
+            },
+            {
+                "id": "heating-block",
+                "synonyms": ["heating block", "dry bath", "heater block"]
             },
             {
                 "id": "pipette",
-                "synonyms": ["pipette", "pipettor", "pipet", "micropipette"]
+                "synonyms": ["pipette", "pipet", "pipettor", "pipetter"]
             },
             {
-                "id": "beaker",
-                "synonyms": ["beaker", "measuring cup", "lab beaker"]
+                "id": "sphygmomanometer",
+                "synonyms": ["Sphygmomanometer", "BP cuff", "Cuff", "pressure cuff"]
             },
             {
-                "id": "flask",
-                "synonyms": ["flask", "erlenmeyer", "erlenmeyer flask"]
+                "id": "vaccutainer-holder",
+                "synonyms": ["vaccutainer holder", "hub", "needle holder", "needle protector"]
             },
             {
-                "id": "petri-dish",
-                "synonyms": ["petri dish", "petri", "culture dish", "dish"]
+                "id": "vaccutainer-needle",
+                "synonyms": ["vaccutainer needle", "Eclipse needle"]
             },
             {
-                "id": "test-tube",
-                "synonyms": ["test tube", "tube", "vial", "sample tube"]
+                "id": "vaccutainer-tube",
+                "synonyms": ["vaccutainer tube", "vacuette tube", "draw tube", "blood draw"]
+            },
+            {
+                "id": "vortex-mixer",
+                "synonyms": ["vortex", "mixer"]
             },
 
-            # Measurements & Units
+            # Medical Supplies
             {
-                "id": "milliliter",
-                "synonyms": ["ml", "milliliter", "millilitre", "mL"]
+                "id": "aerosol-barrier",
+                "synonyms": ["aerosol barrier", "filter tip"]
             },
             {
-                "id": "liter",
-                "synonyms": ["l", "liter", "litre", "L"]
+                "id": "card-dip",
+                "synonyms": ["Card", "Dip"]
             },
             {
-                "id": "milligram",
-                "synonyms": ["mg", "milligram", "milligramme", "mG"]
+                "id": "cassette-block",
+                "synonyms": ["Cassette", "block"]
             },
             {
-                "id": "gram",
-                "synonyms": ["g", "gram", "gramme", "gm"]
+                "id": "charged-slide",
+                "synonyms": ["Charged Slide", "Adhesive Slide", "Plus Slide", "positively charged"]
             },
             {
-                "id": "microliter",
-                "synonyms": ["ul", "microliter", "microlitre", "μl", "µl"]
+                "id": "coverglass",
+                "synonyms": ["Coverglass", "Cover slip", "Cover Glass", "Coverslip"]
             },
             {
-                "id": "micrometer",
-                "synonyms": ["um", "micrometer", "micron", "μm", "µm"]
-            },
-
-            # Common Product Terms
-            {
-                "id": "protective-safety",
-                "synonyms": ["protective", "safety", "protection"]
+                "id": "coverslipping-film",
+                "synonyms": ["coverslipping film", "coverslipping tape"]
             },
             {
-                "id": "sterile-aseptic",
-                "synonyms": ["sterile", "aseptic", "sterilized"]
+                "id": "embedding-mold",
+                "synonyms": ["embedding mold", "base mold"]
             },
             {
-                "id": "disposable-single-use",
-                "synonyms": ["disposable", "single use", "single-use", "one-time"]
+                "id": "finger-stick",
+                "synonyms": ["finger stick", "lancet"]
             },
             {
-                "id": "glove-gloves",
-                "synonyms": ["glove", "gloves", "hand protection"]
+                "id": "multistix",
+                "synonyms": ["multistix", "urine strip"]
             },
             {
-                "id": "cover-covering",
-                "synonyms": ["cover", "covering", "protection", "shield"]
+                "id": "red-gray-tiger-top",
+                "synonyms": ["red/gray", "tiger top"]
             },
             {
-                "id": "powder-free",
-                "synonyms": ["powder free", "powder-free", "powderfree", "non-powdered"]
+                "id": "slide-microscope",
+                "synonyms": ["slide", "microscope slide"]
             },
             {
-                "id": "lab-laboratory",
-                "synonyms": ["lab", "laboratory", "research lab"]
+                "id": "slide-marker",
+                "synonyms": ["slide marker", "marking pen"]
             },
 
-            # Specific Product Categories
+            # Chemicals
             {
-                "id": "slide-microscope-slide",
-                "synonyms": ["slide", "microscope slide", "glass slide", "specimen slide"]
+                "id": "gluteraldehyde",
+                "synonyms": ["Gluteraldehyde", "GL"]
             },
             {
-                "id": "adhesive-slide",
-                "synonyms": ["charged slide", "plus slide", "adhesive slide", "coated slide"]
+                "id": "isopropyl-alcohol",
+                "synonyms": ["isopropyl alcohol", "isopropanol", "2-propanol", "2propanol"]
             },
             {
-                "id": "swab-applicator",
-                "synonyms": ["swab", "applicator", "cotton swab", "specimen swab"]
+                "id": "methylene-chloride",
+                "synonyms": ["Methylene Chloride", "Dichloromethane", "CH₂Cl₂"]
             },
             {
-                "id": "reagent-chemical",
-                "synonyms": ["reagent", "chemical", "solution", "reagent solution"]
-            },
-            {
-                "id": "filter-filtration",
-                "synonyms": ["filter", "filtration", "membrane filter"]
+                "id": "trichloromethane",
+                "synonyms": ["Trichloromethane", "chloroform", "CHCl₃"]
             },
 
-            # Trademark Spelling Variations
+            # Mounting & Staining
+            {
+                "id": "dye-ink",
+                "synonyms": ["dye", "ink"]
+            },
+            {
+                "id": "margin-marker",
+                "synonyms": ["margin marker", "tissue marking dye"]
+            },
+            {
+                "id": "mounting-media",
+                "synonyms": ["mounting media", "coverslip media"]
+            },
+            {
+                "id": "oct-freezing-medium",
+                "synonyms": ["OCT", "Freezing Medium", "Tissue freezing"]
+            },
+            {
+                "id": "tissue-bath",
+                "synonyms": ["tissue bath", "water bath", "waterbath"]
+            },
+
+            # Medical Tape Types
+            {
+                "id": "durapore-silk-tape",
+                "synonyms": ["durapore", "Silk Tape", "Cloth Tape"]
+            },
+            {
+                "id": "micropore-paper-tape",
+                "synonyms": ["micropore", "Paper Tape"]
+            },
+            {
+                "id": "transpore-transparent-tape",
+                "synonyms": ["transpore", "transparent tape"]
+            },
+
+            # Wipes (Enhanced with JAI-2191 fix)
+            {
+                "id": "kimwipes-sciswipe",
+                "synonyms": ["kimwipe", "kim wipe", "wipe", "sciswipe", "delicate task wipes"]
+            },
+
+            # Trademark Spelling Variations (JAI-2164 fix)
             {
                 "id": "parafin-paraffin",
                 "synonyms": ["parafin", "paraffin"]
-            },
-
-            # Private Label Alternatives
-            {
-                "id": "kimwipes-sciswipe",
-                "synonyms": ["kimwipes", "sciswipe", "kimwipe", "delicate task wipes"]
             },
         ]
 
