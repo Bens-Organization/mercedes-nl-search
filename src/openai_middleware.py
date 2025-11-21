@@ -170,6 +170,12 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         return []
 
     try:
+        # JAI-2193 FIX: Exclude storage categories when query is NOT storage-related
+        # This prevents "microscope slide" from retrieving "Slide Mailers" (storage products)
+        # while still allowing "slide storage" to retrieve all storage types
+        storage_keywords = ['storage', 'box', 'cabinet', 'holder', 'mailer', 'organizer', 'container', 'rack', 'drawer']
+        is_storage_query = any(keyword in query.lower() for keyword in storage_keywords)
+
         # FIX: Maximum diversity retrieval strategy
         # Remove categories from search, retrieve many products (60) for LLM to classify
         #
@@ -199,6 +205,13 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
             "sort_by": "_text_match:desc",
             "nl_query": False  # CRITICAL: Prevent circular dependency (boolean, not string)
         }
+
+        # Exclude storage if query doesn't mention storage keywords
+        if not is_storage_query:
+            search_params["filter_by"] = "NOT categories:*Storage*"
+            print(f"[RAG] Query '{query}' is NOT storage-related - excluding Storage categories from retrieval")
+        else:
+            print(f"[RAG] Query '{query}' IS storage-related - including Storage categories")
 
         print(f"[COLLECTION] Using collection: {collection_name}")
         result = typesense_client.collections[collection_name].documents.search(search_params)
