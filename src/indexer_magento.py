@@ -946,11 +946,15 @@ class MagentoProductIndexer:
             raw_categories = all_categories.get(entity_id, [])
             categories = self._clean_and_deduplicate_categories(raw_categories)
 
-            # Stock status - check both is_in_stock flag and qty
-            # If qty is 0 or None, mark as OUT_OF_STOCK regardless of is_in_stock flag
-            stock_status = "OUT_OF_STOCK"
-            if is_in_stock == 1 and qty and qty > 0:
+            # Stock status - prioritize qty over is_in_stock flag
+            # If qty > 0, product should be IN_STOCK (source of truth is inventory qty)
+            # Fall back to is_in_stock flag if qty is 0/None (trust Magento's logic)
+            if qty and qty > 0:
                 stock_status = "IN_STOCK"
+            elif is_in_stock == 1:
+                stock_status = "IN_STOCK"  # Trust Magento if no qty info
+            else:
+                stock_status = "OUT_OF_STOCK"
 
             # Image URL (remove cache-busting suffix from filename)
             image_url = None
