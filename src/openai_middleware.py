@@ -181,13 +181,18 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         # FIX: Reduce typo tolerance to prevent "gloves" matching "glasses"
         # Previous: num_typos=2 allowed too many false matches (gloves→glasses)
         # New: num_typos=1 for stricter matching while still handling real typos
+        #
+        # FIX: Re-add categories field with LOW weight for context
+        # Context: Commit 0bae986 removed categories to fix "slide storage" bias
+        # Issue: Without categories, "slide" searches get slide printers context
+        # Solution: Add categories back with LOW weight (2) for context without dominance
         search_params = {
             "q": query,
-            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description",
-            "query_by_weights": "100,100,4,4,5,5",  # Balanced weights
+            "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
+            "query_by_weights": "100,100,4,4,5,5,2",  # LOW category weight for context only
             "text_match_type": "max_score",  # Cumulative scoring
             "per_page": limit * 3,  # Retrieve 60 products for maximum diversity
-            "prefix": "true,true,true,true,false,false",
+            "prefix": "true,true,true,true,false,false,false",
             "num_typos": 1,  # Reduced from 2 to prevent "gloves"→"glasses" false matches
             "typo_tokens_threshold": 1,
             "drop_tokens_threshold": 2,
@@ -236,9 +241,17 @@ def build_enriched_prompt(
     """
 
     # Group products by category
+    # FIX: Include products without categories (many microscope slides have no category!)
+    # These products were being skipped entirely, causing LLM to only see categorized products
     category_groups = {}
     for product in products:
-        for category in product.get('categories', []):
+        categories = product.get('categories', [])
+        if not categories:
+            # Products without categories go into "Uncategorized" group
+            # This prevents skipping important products like microscope slides
+            categories = ["Uncategorized"]
+
+        for category in categories:
             if category not in category_groups:
                 category_groups[category] = []
             category_groups[category].append(product)
