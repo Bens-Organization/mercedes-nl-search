@@ -36,12 +36,15 @@ class SynonymManager:
         """
         Define synonym groups based on Magento Live Search production configuration.
 
-        Source: Production Magento Live Search synonyms (63 groups)
+        Source: Production Magento Live Search synonyms (62 groups)
         Enhanced with:
         - JAI-2191: kimwipes ⟷ sciswipe (private label alternative)
         - JAI-2164: parafin ⟷ paraffin (trademark spelling)
 
-        Total: 64 synonym groups
+        Removed problematic synonyms:
+        - "slide, microscope slide" (too ambiguous - confused Slide printers vs Microscope slides)
+
+        Total: 62 synonym groups
 
         Categories:
         - Medical/Drug Testing (THC, COC, AMP, etc.)
@@ -245,10 +248,6 @@ class SynonymManager:
             {
                 "id": "red-gray-tiger-top",
                 "synonyms": ["red/gray", "tiger top"]
-            },
-            {
-                "id": "slide-microscope",
-                "synonyms": ["slide", "microscope slide"]
             },
             {
                 "id": "slide-marker",
