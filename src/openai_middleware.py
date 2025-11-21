@@ -170,11 +170,18 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         return []
 
     try:
-        # JAI-2193 FIX: Exclude storage categories when query is NOT storage-related
+        # JAI-2193 FIX: Exclude storage categories for specific consumable queries
         # This prevents "microscope slide" from retrieving "Slide Mailers" (storage products)
-        # while still allowing "slide storage" to retrieve all storage types
+        # while still allowing "microscope" to retrieve actual microscopes (equipment)
+
+        # Storage keywords that indicate user wants storage products
         storage_keywords = ['storage', 'box', 'cabinet', 'holder', 'mailer', 'organizer', 'container', 'rack', 'drawer']
         is_storage_query = any(keyword in query.lower() for keyword in storage_keywords)
+
+        # Consumable keywords that should exclude storage from retrieval
+        # Only exclude storage for these specific product types to prevent storage contamination
+        consumable_keywords = ['slide', 'tube', 'pipette tip', 'glove', 'swab', 'plate', 'dish', 'flask', 'vial', 'bottle']
+        is_consumable_query = any(keyword in query.lower() for keyword in consumable_keywords)
 
         # FIX: Maximum diversity retrieval strategy
         # Remove categories from search, retrieve many products (60) for LLM to classify
@@ -206,13 +213,20 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
             "nl_query": False  # CRITICAL: Prevent circular dependency (boolean, not string)
         }
 
-        # Exclude storage if query doesn't mention storage keywords
+        # Exclude storage ONLY for consumable queries (not all non-storage queries)
+        # This ensures:
+        # - "slide" → Excludes storage → Returns microscope slides
+        # - "microscope slide" → Excludes storage → Returns microscope slides
+        # - "microscope" → No exclusion → Returns actual microscopes (equipment)
+        # - "slide storage" → No exclusion → Returns storage products
         # Typesense filter syntax: categories:!*Storage* (NOT categories:*Storage*)
-        if not is_storage_query:
+        if is_consumable_query and not is_storage_query:
             search_params["filter_by"] = "categories:!*Storage*"
-            print(f"[RAG] Query '{query}' is NOT storage-related - excluding Storage categories from retrieval")
+            print(f"[RAG] Consumable query '{query}' - excluding Storage categories from retrieval")
+        elif is_storage_query:
+            print(f"[RAG] Storage query '{query}' - including Storage categories")
         else:
-            print(f"[RAG] Query '{query}' IS storage-related - including Storage categories")
+            print(f"[RAG] General query '{query}' - including all categories (no storage exclusion)")
 
         print(f"[COLLECTION] Using collection: {collection_name}")
         result = typesense_client.collections[collection_name].documents.search(search_params)
