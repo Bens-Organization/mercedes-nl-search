@@ -226,8 +226,9 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
 
         if is_equipment_query and not is_consumable_query:
             # Equipment query - exclude consumables/slides to return actual equipment
-            search_params["filter_by"] = "categories:!*Slide* && categories:!*Storage*"
-            print(f"[RAG] Equipment query '{query}' - excluding Slides and Storage categories")
+            # NOTE: Many products have empty categories, so we exclude by name instead
+            search_params["filter_by"] = "name:!*slide* && name:!*Slide*"
+            print(f"[RAG] Equipment query '{query}' - excluding products with 'slide' in name")
         elif is_consumable_query and not is_storage_query:
             # Consumable query - exclude storage to return consumables
             search_params["filter_by"] = "categories:!*Storage*"
