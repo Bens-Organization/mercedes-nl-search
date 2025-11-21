@@ -183,6 +183,11 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         consumable_keywords = ['slide', 'tube', 'pipette tip', 'glove', 'swab', 'plate', 'dish', 'flask', 'vial', 'bottle']
         is_consumable_query = any(keyword in query.lower() for keyword in consumable_keywords)
 
+        # Equipment keywords that should exclude consumables/slides from retrieval
+        # "microscope" alone should return equipment, not "microscope slides"
+        equipment_keywords = ['microscope', 'centrifuge', 'incubator', 'autoclave', 'balance', 'shaker', 'stirrer', 'mixer']
+        is_equipment_query = any(keyword == query.lower().strip() for keyword in equipment_keywords)
+
         # FIX: Maximum diversity retrieval strategy
         # Remove categories from search, retrieve many products (60) for LLM to classify
         #
@@ -213,20 +218,26 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
             "nl_query": False  # CRITICAL: Prevent circular dependency (boolean, not string)
         }
 
-        # Exclude storage ONLY for consumable queries (not all non-storage queries)
-        # This ensures:
-        # - "slide" → Excludes storage → Returns microscope slides
-        # - "microscope slide" → Excludes storage → Returns microscope slides
-        # - "microscope" → No exclusion → Returns actual microscopes (equipment)
-        # - "slide storage" → No exclusion → Returns storage products
-        # Typesense filter syntax: categories:!*Storage* (NOT categories:*Storage*)
-        if is_consumable_query and not is_storage_query:
+        # Apply filters based on query type:
+        # 1. Equipment queries ("microscope") → Exclude slides/consumables
+        # 2. Consumable queries ("slide") → Exclude storage
+        # 3. Storage queries ("slide storage") → Include all
+        # Typesense filter syntax: categories:!*Pattern* (NOT categories:*Pattern*)
+
+        if is_equipment_query and not is_consumable_query:
+            # Equipment query - exclude consumables/slides to return actual equipment
+            search_params["filter_by"] = "categories:!*Slide* && categories:!*Storage*"
+            print(f"[RAG] Equipment query '{query}' - excluding Slides and Storage categories")
+        elif is_consumable_query and not is_storage_query:
+            # Consumable query - exclude storage to return consumables
             search_params["filter_by"] = "categories:!*Storage*"
             print(f"[RAG] Consumable query '{query}' - excluding Storage categories from retrieval")
         elif is_storage_query:
+            # Storage query - include all categories
             print(f"[RAG] Storage query '{query}' - including Storage categories")
         else:
-            print(f"[RAG] General query '{query}' - including all categories (no storage exclusion)")
+            # General query - include all categories
+            print(f"[RAG] General query '{query}' - including all categories (no exclusions)")
 
         print(f"[COLLECTION] Using collection: {collection_name}")
         result = typesense_client.collections[collection_name].documents.search(search_params)
