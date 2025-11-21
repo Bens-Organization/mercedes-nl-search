@@ -40,8 +40,9 @@ class SynonymManager:
         Enhanced with:
         - JAI-2191: kimwipes ⟷ sciswipe (private label alternative)
         - JAI-2164: parafin ⟷ paraffin (trademark spelling)
+        - Restored: slide ⟷ microscope slide ⟷ glass slide ⟷ specimen slide
 
-        Total: 64 synonym groups
+        Total: 63 synonym groups
 
         Categories:
         - Medical/Drug Testing (THC, COC, AMP, etc.)
@@ -247,8 +248,8 @@ class SynonymManager:
                 "synonyms": ["red/gray", "tiger top"]
             },
             {
-                "id": "slide-microscope",
-                "synonyms": ["slide", "microscope slide"]
+                "id": "slide-microscope-slide",
+                "synonyms": ["slide", "microscope slide", "glass slide", "specimen slide"]
             },
             {
                 "id": "slide-marker",
