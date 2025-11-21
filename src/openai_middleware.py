@@ -207,8 +207,9 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         }
 
         # Exclude storage if query doesn't mention storage keywords
+        # Typesense filter syntax: categories:!*Storage* (NOT categories:*Storage*)
         if not is_storage_query:
-            search_params["filter_by"] = "NOT categories:*Storage*"
+            search_params["filter_by"] = "categories:!*Storage*"
             print(f"[RAG] Query '{query}' is NOT storage-related - excluding Storage categories from retrieval")
         else:
             print(f"[RAG] Query '{query}' IS storage-related - including Storage categories")
