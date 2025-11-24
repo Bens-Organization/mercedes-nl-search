@@ -1,27 +1,27 @@
 """
-OpenAI-Compatible Middleware Service for Typesense NL Search
+OpenAI-Compatible Middleware Service for Journey AI NL Search
 
-This service acts as a middleware between Typesense and OpenAI, encapsulating
+This service acts as a middleware between the search engine and OpenAI, encapsulating
 the RAG (Retrieval-Augmented Generation) logic:
 
-1. Receives OpenAI-format requests from Typesense
+1. Receives OpenAI-format requests from search engine
 2. Extracts the user query
-3. Runs retrieval search against Typesense (without category filter)
+3. Runs retrieval search against search engine (without category filter)
 4. Injects product context into the prompt
 5. Calls real OpenAI API with enriched context
 6. Returns response in OpenAI format
 
 Architecture:
-    Typesense NL Search → [This Service] → Real OpenAI API
+    Search Engine NL → [This Service] → Real OpenAI API
                               ↓
-                         Typesense Search API
+                         Search Engine API
                          (for product retrieval)
 
 Usage:
     # Start the service
     uvicorn src.openai_middleware:app --host 0.0.0.0 --port 8000
 
-    # Configure in Typesense
+    # Configure in search engine
     {
         "model_name": "openai/gpt-4o-mini",
         "api_base": "http://your-service:8000",
@@ -39,29 +39,29 @@ import re
 from datetime import datetime
 
 from src.config import Config
-import typesense
+import typesense as search_engine_lib
 from src.cache_layer import get_cache
 import warnings
 
-# Suppress Typesense deprecation warnings (we're on v29, not using deprecated APIs)
+# Suppress search engine deprecation warnings (we're on v29, not using deprecated APIs)
 warnings.filterwarnings('ignore', message='.*AnalyticsRulesV1 is deprecated.*')
 warnings.filterwarnings('ignore', message='.*Overrides is deprecated.*')
 warnings.filterwarnings('ignore', message='.*synonyms API.*is deprecated.*')
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="OpenAI-Compatible Middleware for Typesense",
+    title="OpenAI-Compatible Middleware for Journey AI Search",
     description="RAG middleware that enriches queries with product context",
     version="1.0.0"
 )
 
-# Initialize Typesense client
-typesense_client = typesense.Client({
-    'api_key': Config.TYPESENSE_API_KEY,
+# Initialize search engine client
+search_client = search_engine_lib.Client({
+    'api_key': Config.SEARCH_API_KEY,
     'nodes': [{
-        'host': Config.TYPESENSE_HOST,
-        'port': Config.TYPESENSE_PORT,
-        'protocol': Config.TYPESENSE_PROTOCOL
+        'host': Config.SEARCH_HOST,
+        'port': Config.SEARCH_PORT,
+        'protocol': Config.SEARCH_PROTOCOL
     }],
     'connection_timeout_seconds': 10
 })
@@ -86,6 +86,11 @@ class ChatCompletionRequest(BaseModel):
     context: Optional[List[Dict[str, Any]]] = Field(default=None, description="Pre-retrieved product context for RAG")
 
 
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+
 class ChatCompletionChoice(BaseModel):
     index: int
     message: ChatMessage
@@ -107,15 +112,11 @@ class ChatCompletionResponse(BaseModel):
     usage: ChatCompletionUsage
 
 
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
 def extract_query_from_messages(messages: List[ChatMessage]) -> str:
     """
     Extract the user query from OpenAI-format messages.
 
-    Typesense sends messages in format:
+    Search engine sends messages in format:
     [
         {"role": "system", "content": "System prompt with schema..."},
         {"role": "user", "content": "User's natural language query"}
@@ -131,7 +132,7 @@ def extract_query_from_messages(messages: List[ChatMessage]) -> str:
 def extract_schema_info(messages: List[ChatMessage]) -> Dict[str, Any]:
     """
     Extract schema information from the system message.
-    Typesense includes the collection schema in the system prompt.
+    The search engine includes the collection schema in the system prompt.
     """
     for msg in messages:
         if msg.role == "system":
@@ -147,7 +148,7 @@ def extract_schema_info(messages: List[ChatMessage]) -> Dict[str, Any]:
 
 async def retrieve_products(query: str, limit: int = 20, collection_name: str = None) -> List[Dict[str, Any]]:
     """
-    Run retrieval search against Typesense to get relevant products.
+    Run retrieval search against search engine to get relevant products.
     This search does NOT include category filters yet.
 
     For validation/test queries, returns empty list to avoid circular dependency.
@@ -155,18 +156,18 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
     Args:
         query: Search query
         limit: Max number of products to retrieve
-        collection_name: Typesense collection to search (defaults to env var or 'mercedes_products')
+        collection_name: Search collection to search (defaults to env var or 'mercedes_products')
     """
     # Use provided collection or fall back to env var or default
     if collection_name is None:
-        collection_name = Config.TYPESENSE_COLLECTION_NAME
+        collection_name = Config.SEARCH_COLLECTION_NAME
 
-    # Detect validation queries (Typesense uses these during model registration)
+    # Detect validation queries (search engine uses these during model registration)
     validation_patterns = ['test', 'validation', 'ping', 'hello', 'check']
     query_lower = query.lower().strip()
 
     if query_lower in validation_patterns or len(query_lower) < 3:
-        print(f"[VALIDATION] Detected validation query: '{query}' - skipping Typesense retrieval")
+        print(f"[VALIDATION] Detected validation query: '{query}' - skipping search engine retrieval")
         return []
 
     try:
@@ -222,7 +223,7 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         # 1. Equipment queries ("microscope") → Exclude slides/consumables
         # 2. Consumable queries ("slide") → Exclude storage
         # 3. Storage queries ("slide storage") → Include all
-        # Typesense filter syntax: categories:!*Pattern* (NOT categories:*Pattern*)
+        # Search engine filter syntax: categories:!*Pattern* (NOT categories:*Pattern*)
 
         if is_equipment_query and not is_consumable_query:
             # Equipment query - exclude consumables/slides to return actual equipment
@@ -241,7 +242,7 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
             print(f"[RAG] General query '{query}' - including all categories (no exclusions)")
 
         print(f"[COLLECTION] Using collection: {collection_name}")
-        result = typesense_client.collections[collection_name].documents.search(search_params)
+        result = search_client.collections[collection_name].documents.search(search_params)
 
         products = []
         for hit in result.get('hits', []):
@@ -274,7 +275,7 @@ def build_enriched_prompt(
     Build enriched prompt with product context injected (RAG approach).
 
     This creates a new message list with:
-    1. Original system prompt (from Typesense) - includes conservative filtering rules
+    1. Original system prompt (from search engine) - includes conservative filtering rules
     2. Enriched user message with RAG context (categories + sample products)
 
     Matches the format from search_rag.py for consistency.
@@ -405,7 +406,7 @@ def build_enriched_prompt(
 - Multiple categories match equally well (ambiguous)
 - Only broad parent categories exist without specific subcategories
 
-**Query Extraction Rules** (Match Typesense NL behavior):
+**Query Extraction Rules** (Match Search Engine NL behavior):
 
 **KEEP These Terms** (Enhance search relevance):
 - **Descriptive nouns**: capacity, volume, size, weight, length, diameter, thickness, width
@@ -546,7 +547,7 @@ async def call_openai(messages: List[ChatMessage], model: str = "gpt-4o-mini", u
     Returns:
         OpenAI API response (from cache or fresh API call)
     """
-    # Strip "openai/" prefix if present (Typesense sends "openai/gpt-4o-mini")
+    # Strip "openai/" prefix if present (search engine sends "openai/gpt-4o-mini")
     if model.startswith("openai/"):
         model = model.replace("openai/", "")
 
@@ -633,6 +634,7 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
     Returns:
         Modified OpenAI response with category filter applied (if confident)
     """
+    # Note: for_typesense_nl parameter name kept for backward compatibility
     try:
         # Extract LLM message content
         message_content = openai_response["choices"][0]["message"]["content"]
@@ -655,9 +657,9 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         print(f"[RAG] Reasoning: {category_reasoning}")
 
         if for_typesense_nl:
-            # Option A: Typesense NL Integration (Single LLM Call)
+            # Option A: Search Engine NL Integration (Single LLM Call)
             # Apply category filter directly to filter_by and remove custom metadata
-            print(f"[MODE] Typesense NL integration mode - applying category to filter_by")
+            print(f"[MODE] Search Engine NL integration mode - applying category to filter_by")
 
             if detected_category and category_confidence >= confidence_threshold:
                 # Remove backticks from category (if present)
@@ -816,13 +818,13 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             else:
                 print(f"[RAG] ❌ Category filter NOT applied (low confidence or null)")
 
-            # Remove custom metadata fields (Typesense can't parse them)
+            # Remove custom metadata fields (search engine can't parse them)
             params.pop("detected_category", None)
             params.pop("category_confidence", None)
             params.pop("category_reasoning", None)
-            params.pop("per_page", None)  # Also remove per_page (Typesense sets this)
+            params.pop("per_page", None)  # Also remove per_page (search engine sets this)
 
-            print(f"[RAG] Removed custom metadata fields for Typesense compatibility")
+            print(f"[RAG] Removed custom metadata fields for search engine compatibility")
         else:
             # Option B: Decoupled Architecture (2 Searches)
             # Keep metadata for API layer, don't apply category here
@@ -840,7 +842,7 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             sort_fields = [f.strip() for f in llm_sort.split(",") if f.strip()]
             first_sort = sort_fields[0] if sort_fields else ""
 
-            # Skip if it's already a priority field or _text_match (Typesense handles automatically)
+            # Skip if it's already a priority field or _text_match (search engine handles automatically)
             if first_sort and first_sort not in ["in_stock_priority:desc", "brand_priority:desc",
                                                  "_text_match:desc"]:
                 params["sort_by"] = f"in_stock_priority:desc,brand_priority:desc,{first_sort}"
@@ -849,18 +851,18 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
                 params["sort_by"] = "in_stock_priority:desc,brand_priority:desc"
                 print(f"[SORT] Applied default stock-aware brand priority sorting")
         else:
-            # Default: in-stock priority, brand priority (Typesense handles relevance automatically)
+            # Default: in-stock priority, brand priority (search engine handles relevance automatically)
             params["sort_by"] = "in_stock_priority:desc,brand_priority:desc"
             print(f"[SORT] Applied default stock-aware brand priority sorting")
 
-        # Remove empty string fields (Typesense prefers omitted fields over empty strings)
+        # Remove empty string fields (search engine prefers omitted fields over empty strings)
         if params.get("sort_by") == "":
             params.pop("sort_by", None)
         if params.get("filter_by") == "":
             params.pop("filter_by", None)
 
         # Update the response with modified parameters
-        # CRITICAL: Use single-line JSON (no indent) for Typesense's regex parser
+        # CRITICAL: Use single-line JSON (no indent) for search engine's regex parser
         openai_response["choices"][0]["message"]["content"] = json.dumps(params)
 
         print(f"[RESPONSE] Final params: {json.dumps(params)}")
@@ -881,11 +883,11 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
 async def root():
     """Health check and service info"""
     return {
-        "service": "OpenAI-Compatible Middleware for Typesense",
+        "service": "OpenAI-Compatible Middleware for Journey AI Search",
         "status": "running",
         "version": "1.0.0",
         "endpoints": {
-            "/v1/chat/completions": "OpenAI-compatible chat completions (for Typesense)",
+            "/v1/chat/completions": "OpenAI-compatible chat completions (for search engine)",
             "/health": "Health check",
             "/stats": "Service statistics"
         }
@@ -896,11 +898,11 @@ async def root():
 async def health():
     """Health check endpoint (supports GET and HEAD for UptimeRobot)"""
     try:
-        # Test Typesense connection using default collection
-        typesense_client.collections[Config.TYPESENSE_COLLECTION_NAME].retrieve()
-        typesense_status = "connected"
+        # Test search engine connection using default collection
+        search_client.collections[Config.SEARCH_COLLECTION_NAME].retrieve()
+        search_status = "connected"
     except Exception as e:
-        typesense_status = f"error: {str(e)}"
+        search_status = f"error: {str(e)}"
 
     # Check cache status
     cache_status = "unknown"
@@ -914,8 +916,8 @@ async def health():
 
     return {
         "status": "healthy",
-        "typesense": typesense_status,
-        "collection": Config.TYPESENSE_COLLECTION_NAME,
+        "search": search_status,
+        "collection": Config.SEARCH_COLLECTION_NAME,
         "cache": cache_status,
         "timestamp": datetime.utcnow().isoformat()
     }
@@ -926,7 +928,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
     """
     OpenAI-compatible chat completions endpoint.
 
-    This is the main endpoint that Typesense will call.
+    This is the main endpoint that the search engine will call.
     It encapsulates the entire RAG workflow:
     1. Check cache first (early exit if HIT)
     2. Retrieve relevant products (RAG context) - only on cache MISS
@@ -934,21 +936,21 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
     4. Call OpenAI for filter extraction + category classification
     5. Apply category filter if confident (>= 0.75)
     6. Cache the response
-    7. Return search parameters to Typesense
+    7. Return search parameters to search engine
 
     Query Parameters:
-        collection (optional): Typesense collection name to search
-                               Defaults to TYPESENSE_COLLECTION_NAME env var
+        collection (optional): Search collection name to search
+                               Defaults to SEARCH_COLLECTION_NAME env var
     """
     try:
         # Extract collection from query params (defaults to env var)
-        collection_name = http_request.query_params.get('collection', Config.TYPESENSE_COLLECTION_NAME)
+        collection_name = http_request.query_params.get('collection', Config.SEARCH_COLLECTION_NAME)
 
-        # ENTRY POINT LOGGING: Prove Typesense is calling us
+        # ENTRY POINT LOGGING: Prove search engine is calling us
         import sys
         timestamp = datetime.now().isoformat()
         print(f"\n{'='*80}", flush=True)
-        print(f"[{timestamp}] INCOMING REQUEST FROM TYPESENSE", flush=True)
+        print(f"[{timestamp}] INCOMING REQUEST FROM SEARCH ENGINE", flush=True)
         print(f"{'='*80}", flush=True)
         print(f"[REQUEST] Collection: {collection_name}", flush=True)
         print(f"[REQUEST] Model: {request.model}", flush=True)
@@ -997,16 +999,16 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         schema_info = extract_schema_info(request.messages)
 
         # 4. Get product context (RAG) - only executed on cache MISS
-        # Decoupled Architecture: Accept context from request (no Typesense calls in middleware)
+        # Decoupled Architecture: Accept context from request (no search engine calls in middleware)
         if request.context is not None:
             # Context provided by caller (e.g., staging API) - use it directly
             products = request.context
             print(f"[RAG] Using provided context: {len(products)} products", flush=True)
         else:
             # Fallback: retrieve products (for direct middleware testing only)
-            # WARNING: This creates circular dependency when called by Typesense
+            # WARNING: This creates circular dependency when called by search engine
             products = await retrieve_products(user_query, limit=20, collection_name=collection_name)
-            print(f"[RAG] Retrieved products from Typesense collection '{collection_name}': {len(products)} products", flush=True)
+            print(f"[RAG] Retrieved products from search engine collection '{collection_name}': {len(products)} products", flush=True)
 
         # 5. Build enriched prompt with product context
         enriched_messages = build_enriched_prompt(
@@ -1022,9 +1024,9 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         # 7. Apply category filter if LLM is confident
         # Determine mode based on whether context was provided:
         # - context provided (decoupled) → keep metadata for API layer
-        # - no context (Typesense NL) → remove metadata for compatibility
+        # - no context (Search Engine NL) → remove metadata for compatibility
         for_typesense_nl = request.context is None
-        print(f"[MODE] {'Typesense NL integration' if for_typesense_nl else 'Decoupled architecture'} (context={'not provided' if for_typesense_nl else 'provided'})")
+        print(f"[MODE] {'Search Engine NL integration' if for_typesense_nl else 'Decoupled architecture'} (context={'not provided' if for_typesense_nl else 'provided'})")
         openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl, retrieved_products=products, user_query=user_query)
 
         # 8. Cache the FINAL response (after category filter applied) for consistency
@@ -1037,7 +1039,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         except Exception as e:
             print(f"[CACHE] Caching error (response still returned): {e}", flush=True)
 
-        # 9. EXIT LOGGING: Show exact response being sent to Typesense
+        # 9. EXIT LOGGING: Show exact response being sent to search engine
         response_body = json.dumps(openai_response)
         content_preview = openai_response["choices"][0]["message"]["content"][:200] if openai_response.get("choices") else "N/A"
         print(f"\n[RESPONSE] Status: 200 OK", flush=True)
@@ -1046,7 +1048,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         print(f"{'='*80}\n", flush=True)
         sys.stdout.flush()
 
-        # 10. Return in OpenAI format (Typesense expects this)
+        # 10. Return in OpenAI format (search engine expects this)
         return openai_response
 
     except ValueError as e:
@@ -1061,7 +1063,7 @@ async def stats():
     """Service statistics including cache performance"""
     try:
         # Get collection stats using default collection
-        collection_info = typesense_client.collections[Config.TYPESENSE_COLLECTION_NAME].retrieve()
+        collection_info = search_client.collections[Config.SEARCH_COLLECTION_NAME].retrieve()
 
         # Get cache stats
         cache_stats = {}
@@ -1081,7 +1083,7 @@ async def stats():
                 "version": "1.0.0",
                 "model": "gpt-4o-mini",
                 "retrieval_limit": 20,
-                "default_collection": Config.TYPESENSE_COLLECTION_NAME
+                "default_collection": Config.SEARCH_COLLECTION_NAME
             },
             "cache": cache_stats
         }
@@ -1092,27 +1094,27 @@ async def stats():
 @app.post("/generate")
 async def generate_vllm_format(request: Request):
     """
-    vLLM-compatible /generate endpoint for Typesense integration.
+    vLLM-compatible /generate endpoint for search engine integration.
 
     This endpoint provides the same RAG-powered search parameter extraction
     as the OpenAI-compatible endpoint, but returns results in vLLM's format:
     {"text": ["generated text"]}
 
-    Typesense's vllm/ namespace expects this format.
+    Search engine's vllm/ namespace expects this format.
 
     Query Parameters:
-        collection (optional): Typesense collection name to search
-                               Defaults to TYPESENSE_COLLECTION_NAME env var
+        collection (optional): Search collection name to search
+                               Defaults to SEARCH_COLLECTION_NAME env var
     """
     try:
         # Extract collection from query params (defaults to env var)
-        collection_name = request.query_params.get('collection', Config.TYPESENSE_COLLECTION_NAME)
+        collection_name = request.query_params.get('collection', Config.SEARCH_COLLECTION_NAME)
 
         # Parse request body
         data = await request.json()
 
         print("\n" + "=" * 80)
-        print(f"[{datetime.now().isoformat()}] INCOMING REQUEST FROM TYPESENSE")
+        print(f"[{datetime.now().isoformat()}] INCOMING REQUEST FROM SEARCH ENGINE")
         print("=" * 80)
         print(f"[COLLECTION] Using collection: {collection_name}")
         print(f"[DEBUG] Request keys: {list(data.keys())}")
@@ -1148,7 +1150,7 @@ async def generate_vllm_format(request: Request):
 
         # Validation queries (hello, test, etc.) - skip RAG processing
         if user_query and user_query.strip().lower() in ["hello", "hi", "test", "ping"]:
-            print(f"[VALIDATION] Detected validation query: '{user_query}' - skipping Typesense retrieval")
+            print(f"[VALIDATION] Detected validation query: '{user_query}' - skipping search engine retrieval")
             params = {
                 "q": user_query.strip().lower(),
                 "filter_by": "",

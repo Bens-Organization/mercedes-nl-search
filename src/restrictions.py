@@ -205,7 +205,7 @@ async def get_user_permissions(request: Request) -> Dict[str, Any]:
 
 def build_restriction_filter(user_permissions: Dict[str, Any]) -> str:
     """
-    Build Typesense filter to exclude restricted items.
+    Build search engine filter to exclude restricted items.
 
     If user has restricted access, returns empty string (no filter needed).
     Otherwise, returns filter to exclude items with restricted_class=ALT SOURCE.
@@ -214,7 +214,7 @@ def build_restriction_filter(user_permissions: Dict[str, Any]) -> str:
         user_permissions: Dictionary from get_user_permissions()
 
     Returns:
-        Filter string for Typesense search (e.g., "restricted_class:!=[ALT SOURCE]")
+        Filter string for search engine (e.g., "restricted_class:!=[ALT SOURCE]")
 
     Examples:
         With permissions:

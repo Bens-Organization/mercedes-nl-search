@@ -1,9 +1,9 @@
-"""Setup natural language search model in Typesense.
+"""Setup natural language search model in search engine.
 
-This script registers an OpenAI model with Typesense for native NL search.
+This script registers an OpenAI model with the search engine for native NL search.
 Must be run before using nl_query=true in search requests.
 """
-import typesense
+import typesense as search_engine
 import requests
 from config import Config
 
@@ -12,10 +12,10 @@ Config.validate()
 
 
 def setup_nl_model():
-    """Register OpenAI model with Typesense for natural language search."""
+    """Register OpenAI model with search engine for natural language search."""
 
-    # Build Typesense URL
-    base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
+    # Build search engine URL
+    base_url = f"{Config.SEARCH_PROTOCOL}://{Config.SEARCH_HOST}:{Config.SEARCH_PORT}"
 
     # Balanced system prompt - extracts filters when clearly mentioned
     system_prompt = """Extract search parameters from natural language queries for medical/scientific products.
@@ -108,14 +108,15 @@ IMPORTANT: "costs", "cost", "priced" without range words = EXACT price (price:=X
     print("=" * 60)
     print("Setting up Natural Language Search Model")
     print("=" * 60)
-    print(f"Typesense URL: {base_url}")
+    print(f"Search Engine URL: {base_url}")
     print(f"Model ID: {model_id}")
     print(f"Model Name: {model_config['model_name']}")
     print(f"Temperature: {model_config['temperature']}")
     print("=" * 60)
 
     headers = {
-        "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
+        # Note: Header name is required by search engine API
+        "X-TYPESENSE-API-KEY": Config.SEARCH_API_KEY,
         "Content-Type": "application/json"
     }
 
@@ -165,26 +166,27 @@ IMPORTANT: "costs", "cost", "priced" without range words = EXACT price (price:=X
     except requests.exceptions.RequestException as e:
         print(f"\n✗ Connection error: {e}")
         print("\nTroubleshooting:")
-        print("  1. Ensure Typesense server is running")
-        print(f"  2. Check Typesense URL: {base_url}")
-        print("  3. Verify TYPESENSE_API_KEY in .env")
+        print("  1. Ensure search engine server is running")
+        print(f"  2. Check Search Engine URL: {base_url}")
+        print("  3. Verify SEARCH_API_KEY in .env")
         raise
     except Exception as e:
         print(f"\n✗ Error setting up NL model: {e}")
         print("\nTroubleshooting:")
-        print("  1. Check your Typesense version (need v29.0+)")
+        print("  1. Check your search engine version (need v29.0+)")
         print("  2. Verify OPENAI_API_KEY in .env")
-        print("  3. Ensure Typesense server is running")
+        print("  3. Ensure search engine server is running")
         raise
 
 
 def check_model_status():
     """Check if NL search model exists and is configured."""
-    base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
+    base_url = f"{Config.SEARCH_PROTOCOL}://{Config.SEARCH_HOST}:{Config.SEARCH_PORT}"
     model_id = "openai-gpt4o-mini"
 
     headers = {
-        "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
+        # Note: Header name is required by search engine API
+        "X-TYPESENSE-API-KEY": Config.SEARCH_API_KEY,
         "Content-Type": "application/json"
     }
 

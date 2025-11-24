@@ -1,6 +1,6 @@
-"""Setup middleware model in Typesense for RAG-powered NL search.
+"""Setup middleware model in search engine for RAG-powered NL search.
 
-This script registers the middleware as an NL model with Typesense.
+This script registers the middleware as an NL model with the search engine.
 The middleware provides RAG-based category classification + filter extraction.
 
 Must be run before using nl_query=true with middleware integration.
@@ -9,7 +9,7 @@ IMPORTANT: Models are registered PER ENVIRONMENT + COLLECTION.
 Each environment (dev/staging/prod) should have its own model pointing to its middleware.
 
 Usage:
-    # Register model for current environment (uses ENVIRONMENT + TYPESENSE_COLLECTION_NAME from env)
+    # Register model for current environment (uses ENVIRONMENT + SEARCH_COLLECTION_NAME from env)
     ENVIRONMENT=staging MIDDLEWARE_URL=https://web-mw-staging.up.railway.app python src/setup_middleware_model.py
 
     # Or specify environment and collection explicitly
@@ -36,7 +36,7 @@ Then set NL_MODEL_ID in each backend environment:
     - Staging: NL_MODEL_ID=middleware-rag-staging-mercedes_magento
     - Production: NL_MODEL_ID=middleware-rag-production-mercedes_magento
 """
-import typesense
+import typesense as search_engine
 import requests
 from config import Config
 
@@ -45,23 +45,23 @@ Config.validate()
 
 
 def setup_middleware_model(collection_name: str = None, environment: str = None):
-    """Register middleware as NL search model with Typesense.
+    """Register middleware as NL search model with search engine.
 
     Models can be registered PER ENVIRONMENT + COLLECTION.
     This allows dev/staging/prod to use different middleware URLs.
 
     Args:
-        collection_name: Typesense collection name (e.g., 'mercedes_products', 'mercedes_magento')
-                         If not specified, uses Config.TYPESENSE_COLLECTION_NAME
+        collection_name: Search collection name (e.g., 'mercedes_products', 'mercedes_magento')
+                         If not specified, uses Config.SEARCH_COLLECTION_NAME
         environment: Environment name (e.g., 'development', 'staging', 'production')
                      If not specified, uses Config.ENVIRONMENT
     """
-    # Build Typesense URL
-    base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
+    # Build search engine URL
+    base_url = f"{Config.SEARCH_PROTOCOL}://{Config.SEARCH_HOST}:{Config.SEARCH_PORT}"
 
     # Use provided values or fall back to config
     if collection_name is None:
-        collection_name = Config.TYPESENSE_COLLECTION_NAME
+        collection_name = Config.SEARCH_COLLECTION_NAME
 
     if environment is None:
         environment = Config.ENVIRONMENT
@@ -84,9 +84,9 @@ def setup_middleware_model(collection_name: str = None, environment: str = None)
     }
 
     print("=" * 70)
-    print("Setting up Middleware Model for Typesense NL Search")
+    print("Setting up Middleware Model for NL Search")
     print("=" * 70)
-    print(f"Typesense URL: {base_url}")
+    print(f"Search Engine URL: {base_url}")
     print(f"Middleware URL: {Config.MIDDLEWARE_URL}")
     print(f"Model ID: {model_id}")
     print(f"Model Name: {model_config['model_name']}")
@@ -94,15 +94,16 @@ def setup_middleware_model(collection_name: str = None, environment: str = None)
     print(f"API URL: {api_url}")
     print("=" * 70)
     print("\nHow this works:")
-    print("  1. Typesense sends query to middleware (not OpenAI)")
+    print("  1. Search engine sends query to middleware (not OpenAI)")
     print("  2. Middleware retrieves products from specified collection")
     print("  3. Middleware runs RAG classification")
     print("  4. Middleware returns {q, filter_by} with category")
-    print("  5. Typesense parses and executes search")
+    print("  5. Search engine parses and executes search")
     print("=" * 70)
 
     headers = {
-        "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
+        # Note: Header name is required by search engine API
+        "X-TYPESENSE-API-KEY": Config.SEARCH_API_KEY,
         "Content-Type": "application/json"
     }
 
@@ -154,14 +155,14 @@ def setup_middleware_model(collection_name: str = None, environment: str = None)
     except requests.exceptions.RequestException as e:
         print(f"\n✗ Connection error: {e}")
         print("\nTroubleshooting:")
-        print("  1. Ensure Typesense server is running")
-        print(f"  2. Check Typesense URL: {base_url}")
-        print("  3. Verify TYPESENSE_API_KEY in .env")
+        print("  1. Ensure search engine server is running")
+        print(f"  2. Check Search Engine URL: {base_url}")
+        print("  3. Verify SEARCH_API_KEY in .env")
         raise
     except Exception as e:
         print(f"\n✗ Error setting up middleware model: {e}")
         print("\nTroubleshooting:")
-        print("  1. Check your Typesense version (need v29.0+)")
+        print("  1. Check your search engine version (need v29.0+)")
         print("  2. Ensure middleware is deployed and accessible")
         print(f"  3. Test middleware: curl {Config.MIDDLEWARE_URL}/health")
         raise
@@ -172,15 +173,15 @@ def check_model_status(collection_name: str = None, environment: str = None):
 
     Args:
         collection_name: Collection name (e.g., 'mercedes_products', 'mercedes_magento')
-                         If not specified, uses Config.TYPESENSE_COLLECTION_NAME
+                         If not specified, uses Config.SEARCH_COLLECTION_NAME
         environment: Environment name (e.g., 'development', 'staging', 'production')
                      If not specified, uses Config.ENVIRONMENT
     """
-    base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
+    base_url = f"{Config.SEARCH_PROTOCOL}://{Config.SEARCH_HOST}:{Config.SEARCH_PORT}"
 
     # Use provided values or fall back to config
     if collection_name is None:
-        collection_name = Config.TYPESENSE_COLLECTION_NAME
+        collection_name = Config.SEARCH_COLLECTION_NAME
 
     if environment is None:
         environment = Config.ENVIRONMENT
@@ -189,7 +190,8 @@ def check_model_status(collection_name: str = None, environment: str = None):
     model_id = f"middleware-rag-{environment}-{collection_name}"
 
     headers = {
-        "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
+        # Note: Header name is required by search engine API
+        "X-TYPESENSE-API-KEY": Config.SEARCH_API_KEY,
         "Content-Type": "application/json"
     }
 
