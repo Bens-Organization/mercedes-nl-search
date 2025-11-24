@@ -209,7 +209,7 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
             "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
             "query_by_weights": "100,100,4,4,5,5,2",  # LOW category weight for context only
             "text_match_type": "max_score",  # Cumulative scoring
-            "per_page": limit * 3,  # Retrieve 60 products for maximum diversity
+            "per_page": limit + 10,  # Retrieve 30 products (only top 15 used in context anyway)
             "prefix": "true,true,true,true,false,false,false",
             "num_typos": 1,  # Reduced from 2 to prevent "gloves"→"glasses" false matches
             "typo_tokens_threshold": 1,
@@ -461,67 +461,37 @@ IMPORTANT:
 - ALWAYS extract stock when mentioned (stock_status:=IN_STOCK)
 - ALWAYS extract special_price for "on sale" (special_price:>0)
 
-**Examples** (RAG-based category selection from retrieved products):
+**Examples** (RAG-based category selection - 7 key patterns):
 
-Example 1 - SKU Search (field-specific, NO category filter):
-Query: "MER 1200"
-Retrieved categories: ["Products/Chemicals & Stains/Naphthol Yellow", "Brand: Mercedes Scientific"]
+Example 1 - SKU/Model Number Search (NO category filter):
+Query: "MER 1200" or "TNR700S under $100"
 → {{"q": "sku:MER 1200", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
 
-Example 2 - SKU Search with filter (field-specific):
-Query: "TNR700S under $100"
-Retrieved categories: ["Products/Lab Equipment/Centrifuges", "Brand: Tanner Scientific"]
-→ {{"q": "sku:TNR700S", "filter_by": "price:<100", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.0, "category_reasoning": "SKU/model number search - category filter skipped"}}
-
-Example 3 - Specific Category Over Broad Parent (CRITICAL for avoiding accessories):
+Example 2 - Specific Category (avoid accessories):
 Query: "cassettes under $200"
-Retrieved categories: ["Products / Embedding", "Cryotomy & Grossing / Cassettes", "Cryotomy & Grossing / Biopsy Bags, Paper & Sponges", "Brand: Cancer Diagnostics"]
-→ {{"q": "cassette", "filter_by": "price:<200", "sort_by": "", "per_page": 20, "detected_category": "Cryotomy & Grossing / Cassettes", "category_confidence": 0.9, "category_reasoning": "Chose specific 'Cassettes' category over broad 'Embedding' parent to avoid cassette papers/accessories in 'Biopsy Bags' category"}}
+Retrieved: ["Cryotomy & Grossing / Cassettes", "Cryotomy & Grossing / Biopsy Bags"]
+→ {{"q": "cassette", "filter_by": "price:<200", "sort_by": "", "per_page": 20, "detected_category": "Cryotomy & Grossing / Cassettes", "category_confidence": 0.9, "category_reasoning": "Chose specific 'Cassettes' over broad parent to avoid accessories"}}
 
-Example 4:
-Query: "test tubes glass"
-Retrieved categories: ["Products/Glass & Plasticware/Tubes/Test Tubes", "Brand: Fisher Scientific", "Size: 16mm"]
-→ {{"q": "test tube glass", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Test Tubes", "category_confidence": 0.9, "category_reasoning": "Exact match - 'test tubes' maps to Test Tubes category in retrieved products"}}
-
-Example 5:
+Example 3 - Product with price filter:
 Query: "nitrile gloves under $50"
-Retrieved categories: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell", "Size: Large"]
-→ {{"q": "nitrile glove", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category in retrieved results"}}
+Retrieved: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell"]
+→ {{"q": "nitrile glove", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category"}}
 
-Example 6:
-Query: "clear"
-Retrieved categories: ["Products/Glass & Plasticware/Beakers", "Products/Lab Plasticware/Containers", "Brand: Corning"]
-→ {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Query is only an attribute without product type - too ambiguous"}}
+Example 4 - Ambiguous query (return null):
+Query: "clear" or "Mercedes Scientific"
+→ {{"q": "clear", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.2, "category_reasoning": "Query is only an attribute/brand without product type - too ambiguous"}}
 
-Example 7:
-Query: "Mercedes Scientific"
-Retrieved categories: ["Brand: Mercedes Scientific", "Products/Gloves & Apparel/Gloves", "Products/Pipettes"]
-→ {{"q": "Mercedes Scientific", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": null, "category_confidence": 0.3, "category_reasoning": "Query is only a brand name - multiple product categories exist"}}
-
-Example 8:
-Query: "centrifuge tubes 50ml capacity"
-Retrieved categories: ["Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "Brand": Celltreat"]
-→ {{"q": "centrifuge tube 50ml capacity", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Glass & Plasticware/Tubes/Centrifuge Tubes", "category_confidence": 0.9, "category_reasoning": "Specific product type with capacity - exact category match in results"}}
-
-Example 9:
+Example 5 - On sale with sorting:
 Query: "pipettes on sale sorted by price"
-Retrieved categories: ["Products/Pipettes", "Brand: Thermo Fisher"]
-→ {{"q": "pipette", "filter_by": "special_price:>0", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Clear product type with sale filter and price sort"}}
+→ {{"q": "pipette", "filter_by": "special_price:>0", "sort_by": "price:asc", "per_page": 20, "detected_category": "Products/Pipettes", "category_confidence": 0.85, "category_reasoning": "Product type with sale filter and price sort"}}
 
-Example 10 - Broad query, use PARENT category:
-Query: "stains"
-Retrieved categories: ["Products/Chemicals & Stains/Gram" (3 products), "Products/Chemicals & Stains/Eosin" (3 products), "Products/Chemicals & Stains/Alcian Blue" (3 products), "Products/Reagents/IHC/Antibodies" (15 products)]
-→ {{"q": "stain", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Chemicals & Stains", "category_confidence": 0.85, "category_reasoning": "Broad query with products spread across many stain subcategories (Gram, Eosin, Alcian Blue, etc.) - using parent category to include all stain types. Ignored Antibodies category as it's reagents, not stains."}}
+Example 6 - Broad query → PARENT category:
+Query: "stains" (spread across Gram, Eosin, Alcian Blue subcategories)
+→ {{"q": "stain", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Chemicals & Stains", "category_confidence": 0.85, "category_reasoning": "Broad query spread across many subcategories - using parent to include all"}}
 
-Example 11 - Specific query, use SPECIFIC subcategory:
-Query: "gram stain"
-Retrieved categories: ["Products/Chemicals & Stains/Gram" (12 products), "Products/Chemicals & Stains/Eosin" (2 products)]
-→ {{"q": "gram stain", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Chemicals & Stains / Gram", "category_confidence": 0.95, "category_reasoning": "Specific query for 'gram stain' with majority of products in Gram subcategory - using specific subcategory"}}
-
-Example 12 - Broad query, use PARENT category:
-Query: "gloves"
-Retrieved categories: ["Products/Gloves & Apparel/Gloves" (mix of nitrile, latex, vinyl), "Brand: Ansell", "Brand: Medline"]
-→ {{"q": "glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Gloves & Apparel / Gloves", "category_confidence": 0.85, "category_reasoning": "Broad query with mixed glove types - using parent Gloves category to include all glove materials"}}
+Example 7 - Specific query → SPECIFIC subcategory:
+Query: "gram stain" (majority in Gram subcategory)
+→ {{"q": "gram stain", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Chemicals & Stains / Gram", "category_confidence": 0.95, "category_reasoning": "Specific query with dominant subcategory - using specific"}}
 
 Note: Middleware will automatically prepend "in_stock_priority:desc,brand_priority:desc" to all sort_by values!
 """
