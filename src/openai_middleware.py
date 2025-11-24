@@ -170,7 +170,7 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         return []
 
     try:
-        # JAI-2193 FIX: Exclude storage categories for specific consumable queries
+        # Exclude storage categories for specific consumable queries
         # This prevents "microscope slide" from retrieving "Slide Mailers" (storage products)
         # while still allowing "microscope" to retrieve actual microscopes (equipment)
 
@@ -523,6 +523,15 @@ Query: "gloves"
 Retrieved categories: ["Products/Gloves & Apparel/Gloves" (mix of nitrile, latex, vinyl), "Brand: Ansell", "Brand: Medline"]
 → {{"q": "glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Gloves & Apparel / Gloves", "category_confidence": 0.85, "category_reasoning": "Broad query with mixed glove types - using parent Gloves category to include all glove materials"}}
 
+Example 13 - SYNONYM AWARENESS: Cover glass = Coverslips (CRITICAL):
+Query: "cover glass for microscope slides"
+Retrieved categories: ["Products / Microscope Slides" (6 products), "Root Catalog / Coverslips & Control Slides / Coverslips" (45 products)]
+→ {{"q": "cover glass microscope slide", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Root Catalog /  Coverslips & Control Slides / Coverslips", "category_confidence": 0.95, "category_reasoning": "Cover glass = coverglass = coverslip (synonyms). User wants coverslips for microscope slides, NOT the slides themselves. Use Coverslips category even though 'microscope slides' appears in query."}}
+
+**Synonym Awareness** (CRITICAL - avoid wrong category):
+- "cover glass" / "coverglass" / "coverslip" / "cover slip" → Use Coverslips category (NOT Microscope Slides)
+- Focus on the PRIMARY product being searched, not qualifier phrases like "for microscope slides"
+
 Note: Middleware will automatically prepend "in_stock_priority:desc,brand_priority:desc" to all sort_by values!
 """
 
@@ -653,6 +662,24 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         print(f"[RAG] Category detected: {detected_category or 'None'}")
         print(f"[RAG] Confidence: {category_confidence:.2f} (threshold: {confidence_threshold})")
         print(f"[RAG] Reasoning: {category_reasoning}")
+
+        # Override category for "cover glass" queries
+        # The LLM often detects "microscope slides" from queries like "cover glass for microscope slides"
+        # but cover glass/coverglass/coverslip products are in the "Coverslips" category, not "Microscope Slides"
+        if user_query:
+            query_lower = user_query.lower()
+            cover_glass_terms = ['cover glass', 'coverglass', 'coverslip', 'cover slip']
+            is_cover_glass_query = any(term in query_lower for term in cover_glass_terms)
+
+            if is_cover_glass_query:
+                # Override to Coverslips category with high confidence
+                # Use partial match to catch "Root Catalog / Coverslips & Control Slides / Coverslips"
+                print(f"[RAG] ⚠️  Cover glass query detected - overriding category to Coverslips")
+                print(f"[RAG]    Original category: {detected_category}")
+                detected_category = "Coverslips"  # Will use partial match below
+                category_confidence = 0.95
+                category_reasoning = "Cover glass/coverglass/coverslip query - using Coverslips category"
+                print(f"[RAG]    New category: {detected_category} (confidence: {category_confidence})")
 
         if for_typesense_nl:
             # Option A: Typesense NL Integration (Single LLM Call)
@@ -789,10 +816,21 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
                                 category_suffix = last_word
                                 print(f"[RAG] ⚠️  Non-storage broad query - using partial pattern '*{last_word}*'")
 
+                # Force partial matching for simple category names
+                # When we override to "Coverslips" (no path), always use partial match
+                # This catches "Root Catalog / Coverslips & Control Slides / Coverslips"
+                parts = escaped_category.split('/')
+                if len(parts) == 1 and escaped_category.strip():
+                    # Simple category name (e.g., "Coverslips") - use partial match
+                    use_partial_match = True
+                    category_suffix = escaped_category.strip()
+                    print(f"[RAG] ⚠️  Simple category name '{category_suffix}' - forcing partial match")
+
                 # Create appropriate filter based on detection
                 if use_partial_match and category_suffix:
                     # Use partial match to include all subcategories
                     # This allows "alcohol" to match "Ethyl Alcohol", "Isopropyl Alcohol", etc.
+                    # And "Coverslips" to match "Root Catalog / Coverslips & Control Slides / Coverslips"
                     category_filter = f"categories:*{category_suffix}*"
                     print(f"[RAG] ✅ Partial match filter applied: '*{category_suffix}*'")
                 else:
@@ -1028,7 +1066,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
         openai_response = apply_category_filter(openai_response, for_typesense_nl=for_typesense_nl, retrieved_products=products, user_query=user_query)
 
         # 8. Cache the FINAL response (after category filter applied) for consistency
-        # CRITICAL FIX (JAI-2202): Cache AFTER apply_category_filter() to ensure
+        # CRITICAL: Cache AFTER apply_category_filter() to ensure
         # cache MISS and cache HIT produce identical results
         try:
             cache = get_cache()
