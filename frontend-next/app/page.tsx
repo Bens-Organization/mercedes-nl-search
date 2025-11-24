@@ -25,7 +25,7 @@ interface Product {
 interface SearchStats {
   total: number;
   queryTime: number;
-  typesenseQuery: any;
+  searchQuery: any;
 }
 
 export default function Home() {
@@ -117,7 +117,7 @@ export default function Home() {
       setStats({
         total: data.total,
         queryTime: data.query_time_ms,
-        typesenseQuery: data.typesense_query,
+        searchQuery: data.search_query,
       });
 
       setHasMore(newResults.length < data.total);
@@ -224,28 +224,28 @@ export default function Home() {
         <pre className="text-xs mb-4 block max-w-full overflow-auto w-full">
           {(() => {
             // Display middleware-extracted query and filters
-            // Support both legacy (top-level) and new (nested in typesense_query) API response formats
+            // Support both legacy (top-level) and new (nested in search_query) API response formats
             const response = stats as any;
-            const tq = stats.typesenseQuery || {};
+            const sq = stats.searchQuery || {};
             const parts = [];
 
             // Check both top-level (legacy API) and nested locations (new API)
             const extractedQuery = response.extracted_query ||  // Legacy: top-level
-                                   tq.extracted_query ||        // New: nested in typesense_query
-                                   tq.parsed_nl_query?.generated_params?.q ||
-                                   tq.nl_extracted_query ||
-                                   tq.parsed?.q ||
+                                   sq.extracted_query ||        // New: nested in search_query
+                                   sq.parsed_nl_query?.generated_params?.q ||
+                                   sq.nl_extracted_query ||
+                                   sq.parsed?.q ||
                                    query;
 
             const extractedFilters = response.filters_applied ||  // Legacy: top-level
-                                     tq.filters_applied ||        // New: nested in typesense_query
-                                     tq.parsed_nl_query?.generated_params?.filter_by ||
-                                     tq.nl_extracted_filters ||
-                                     tq.parsed?.filter_by;
+                                     sq.filters_applied ||        // New: nested in search_query
+                                     sq.parsed_nl_query?.generated_params?.filter_by ||
+                                     sq.nl_extracted_filters ||
+                                     sq.parsed?.filter_by;
 
-            const extractedSort = tq.parsed_nl_query?.augmented_params?.sort_by ||
-                                  tq.nl_extracted_sort ||
-                                  tq.parsed?.sort_by;
+            const extractedSort = sq.parsed_nl_query?.augmented_params?.sort_by ||
+                                  sq.nl_extracted_sort ||
+                                  sq.parsed?.sort_by;
 
             if (extractedQuery && extractedQuery !== query) {
               parts.push(`"q":"${extractedQuery}"`);

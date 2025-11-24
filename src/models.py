@@ -51,8 +51,8 @@ class SearchQuery(BaseModel):
     max_results: int = Field(default=20, ge=1, le=100)
 
 
-class TypesenseQuery(BaseModel):
-    """Structured Typesense query parameters."""
+class SearchQueryParams(BaseModel):
+    """Structured search query parameters."""
     q: str = "*"  # Search query
     filter_by: Optional[str] = None  # Filters like "price:[100..500]"
     sort_by: Optional[str] = None  # Sort criteria
@@ -70,4 +70,4 @@ class SearchResponse(BaseModel):
     confidence_threshold: Optional[float] = None  # Minimum confidence threshold used
     total: int
     query_time_ms: float
-    typesense_query: Dict[str, Any]
+    search_query: Dict[str, Any]

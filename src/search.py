@@ -1,18 +1,18 @@
 """
 Natural Language Search Implementation
 
-This module provides search functionality using Typesense's native NL integration.
+This module provides search functionality using Journey AI's NL integration.
 The search flow leverages middleware for RAG-based category classification.
 
 Architecture:
-    API → Typesense (nl_query=true) → Middleware (RAG classification) → Results
+    API → Search Engine (nl_query=true) → Middleware (RAG classification) → Results
 
 How it works:
-    1. API calls Typesense with nl_query=true
-    2. Typesense calls middleware for query processing
+    1. API calls search engine with nl_query=true
+    2. Search engine calls middleware for query processing
     3. Middleware performs RAG category classification
     4. Middleware returns search parameters (q, filter_by with category)
-    5. Typesense executes search and returns results
+    5. Search engine executes search and returns results
 """
 
 import typesense
@@ -24,11 +24,11 @@ import re
 
 
 class Search:
-    """Search implementation using Typesense NL integration."""
+    """Search implementation using Journey AI NL integration."""
 
     def __init__(self):
-        """Initialize Typesense client."""
-        self.typesense_client = typesense.Client({
+        """Initialize search client."""
+        self.search_client = typesense.Client({
             'api_key': Config.TYPESENSE_API_KEY,
             'nodes': [{
                 'host': Config.TYPESENSE_HOST,
@@ -120,7 +120,7 @@ class Search:
         restriction_filter: str = ""
     ) -> SearchResponse:
         """
-        Execute natural language search using Typesense NL integration.
+        Execute natural language search using Journey AI NL integration.
 
         Args:
             query: User's natural language query
@@ -136,11 +136,11 @@ class Search:
         # Detect size pattern early to adjust search parameters
         size_pattern = self._detect_size_pattern(query)
 
-        # If size pattern detected, fetch more results from Typesense to ensure we get all matches
+        # If size pattern detected, fetch more results to ensure we get all matches
         # before filtering (since "22x22" vs "22 x 22" may rank differently)
         fetch_results = 100 if size_pattern else max_results
 
-        # Typesense NL search parameters
+        # NL search parameters
         search_params = {
             "q": query,
             "query_by": "name,sku,size,name_normalized,sku_normalized,description,short_description,categories",
@@ -164,21 +164,21 @@ class Search:
         if debug:
             search_params["nl_query_debug"] = True
 
-        print(f"[Typesense NL] Searching with query: '{query}'")
-        print(f"[Typesense NL] NL Model: {Config.NL_MODEL_ID}")
-        print(f"[Typesense NL] DEBUG - Search params: {search_params}")
+        print(f"[Search] Searching with query: '{query}'")
+        print(f"[Search] NL Model: {Config.NL_MODEL_ID}")
+        print(f"[Search] DEBUG - Search params: {search_params}")
 
         # Execute search
-        result = self.typesense_client.collections[self.collection_name].documents.search(search_params)
+        result = self.search_client.collections[self.collection_name].documents.search(search_params)
 
-        # DEBUG: Print full result to see what Typesense returned
-        print(f"[Typesense NL] DEBUG - Full result keys: {list(result.keys())}")
+        # DEBUG: Print full result to see what search engine returned
+        print(f"[Search] DEBUG - Full result keys: {list(result.keys())}")
         if 'request_params' in result:
-            print(f"[Typesense NL] DEBUG - Request params from Typesense: {result['request_params']}")
+            print(f"[Search] DEBUG - Request params: {result['request_params']}")
         if 'parsed_nl_query' in result:
-            print(f"[Typesense NL] DEBUG - Parsed NL query (what middleware returned): {result['parsed_nl_query']}")
+            print(f"[Search] DEBUG - Parsed NL query (what middleware returned): {result['parsed_nl_query']}")
         if 'nl_debug' in result:
-            print(f"[Typesense NL] DEBUG - NL Debug info: {result['nl_debug']}")
+            print(f"[Search] DEBUG - NL Debug info: {result['nl_debug']}")
 
         # Calculate query time
         query_time_ms = (time.time() - start_time) * 1000
@@ -219,14 +219,12 @@ class Search:
         # This ensures the UI shows "Found 4 results" instead of "Found 63 results"
         if size_filtered:
             total_found = len(products)
-            print(f"[Size Filter] Updated total from Typesense count to filtered count: {total_found}")
+            print(f"[Size Filter] Updated total from search engine count to filtered count: {total_found}")
 
         # Build response metadata
-        typesense_query = {
-            "approach": "typesense_nl",
+        search_query = {
+            "approach": "journey_ai_nl",
             "original_query": query,
-            "nl_model_id": Config.NL_MODEL_ID,
-            "middleware_url": Config.MIDDLEWARE_URL,
             "results_found": total_found,
             "results_returned": len(products),  # Updated count after size filtering
         }
@@ -234,40 +232,40 @@ class Search:
         # Add size filtering info if applied
         if size_pattern:
             width, height = size_pattern
-            typesense_query["size_detected"] = f"{width}x{height}"
-            typesense_query["size_filtered"] = size_filtered
+            search_query["size_detected"] = f"{width}x{height}"
+            search_query["size_filtered"] = size_filtered
             if size_filtered:
-                # Include original Typesense count for debugging
-                typesense_query["typesense_total_found"] = original_total_found
+                # Include original count for debugging
+                search_query["pre_filter_total_found"] = original_total_found
 
         # Always include middleware-extracted parameters (not just in debug mode)
         # Read from parsed_nl_query.augmented_params (contains middleware-processed params)
         if "parsed_nl_query" in result and "augmented_params" in result["parsed_nl_query"]:
             augmented = result["parsed_nl_query"]["augmented_params"]
-            typesense_query["extracted_query"] = augmented.get("q", query)
-            typesense_query["filters_applied"] = augmented.get("filter_by", "")
-            typesense_query["sort_applied"] = augmented.get("sort_by")
+            search_query["extracted_query"] = augmented.get("q", query)
+            search_query["filters_applied"] = augmented.get("filter_by", "")
+            search_query["sort_applied"] = augmented.get("sort_by")
         else:
             # Fallback to original query if middleware didn't process it
-            typesense_query["extracted_query"] = query
-            typesense_query["filters_applied"] = ""
-            typesense_query["sort_applied"] = None
+            search_query["extracted_query"] = query
+            search_query["filters_applied"] = ""
+            search_query["sort_applied"] = None
 
         # Include additional debug info if requested
         if debug and "parsed_nl_query" in result:
-            typesense_query["parsed_nl_query"] = result.get("parsed_nl_query")
+            search_query["parsed_nl_query"] = result.get("parsed_nl_query")
 
-        print(f"[Typesense NL] Found {total_found} results in {query_time_ms:.0f}ms")
+        print(f"[Search] Found {total_found} results in {query_time_ms:.0f}ms")
 
         return SearchResponse(
             results=products,
             total=total_found,
             query_time_ms=query_time_ms,
-            typesense_query=typesense_query
+            search_query=search_query
         )
 
     def _transform_results(self, hits: List[Dict[str, Any]]) -> List[Product]:
-        """Transform Typesense hits into Product objects."""
+        """Transform search hits into Product objects."""
         products = []
 
         for hit in hits:

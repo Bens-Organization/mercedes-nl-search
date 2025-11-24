@@ -16,7 +16,7 @@ Config.validate()
 # Initialize FastAPI app
 app = FastAPI(
     title="Mercedes Scientific Natural Language Search API",
-    description="Natural language search API using Typesense NL integration with RAG-based category classification",
+    description="Natural language search API powered by Journey AI with RAG-based category classification",
     version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
@@ -69,7 +69,7 @@ async def home():
         "status": "ok",
         "message": "Mercedes Scientific Natural Language Search API",
         "version": "3.0.0",
-        "architecture": "Typesense NL + RAG Middleware",
+        "architecture": "Journey AI NL + RAG",
         "endpoints": {
             "search": "/api/search",
             "health": "/health",
@@ -82,13 +82,13 @@ async def home():
 async def health():
     """Health check for monitoring (supports GET and HEAD for UptimeRobot)."""
     try:
-        # Verify Typesense connection
-        collections = search_engine.typesense_client.collections.retrieve()
+        # Verify search service connection
+        collections = search_engine.search_client.collections.retrieve()
         return {
             "status": "healthy",
             "services": {
                 "api": "ok",
-                "typesense": "ok"
+                "search": "ok"
             }
         }
     except Exception as e:
@@ -98,9 +98,9 @@ async def health():
                 "status": "unhealthy",
                 "services": {
                     "api": "ok",
-                    "typesense": "error"
+                    "search": "error"
                 },
-                "error": str(e)
+                "error": "Search service unavailable"
             }
         )
 
@@ -110,11 +110,11 @@ async def search(search_request: SearchRequest, request: Request):
     """
     Search products using natural language with restriction filtering.
 
-    Uses Typesense NL integration with RAG-based category classification:
-    - API calls Typesense with nl_query=true
+    Uses Journey AI NL integration with RAG-based category classification:
+    - API receives natural language query
     - Applies restriction filter based on user permissions
-    - Typesense calls middleware for RAG classification
-    - Middleware returns search parameters with category filter
+    - AI middleware performs RAG classification
+    - Returns search parameters with category filter
     - Results returned to user
 
     Request body:
@@ -133,7 +133,7 @@ async def search(search_request: SearchRequest, request: Request):
         "results": [...],
         "total": 25,
         "query_time_ms": 150,
-        "typesense_query": {...}
+        "search_query": {...}
     }
     """
     try:
@@ -254,11 +254,9 @@ if __name__ == "__main__":
     print("=" * 60)
     print("Mercedes Scientific Natural Language Search API")
     print("=" * 60)
-    print(f"Architecture: Typesense NL + RAG Middleware")
+    print(f"Architecture: Journey AI NL + RAG")
     print(f"Environment: {Config.ENVIRONMENT}")
     print(f"Server: http://localhost:{Config.SERVER_PORT}")
-    print(f"Typesense: {Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}")
-    print(f"Collection: {Config.TYPESENSE_COLLECTION_NAME}")
     print("=" * 60)
     print("\nEndpoints:")
     print(f"  GET  /              - API info")
