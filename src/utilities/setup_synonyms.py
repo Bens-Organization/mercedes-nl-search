@@ -1,5 +1,5 @@
 """
-Typesense Synonym Setup for Mercedes Scientific Search
+Synonym Setup for Mercedes Scientific Search
 
 This script manages synonym groups for the product search.
 Synonyms work at the text search level (complementing semantic embeddings).
@@ -11,26 +11,26 @@ Usage:
     python src/setup_synonyms.py --test       # Test synonym matching
 """
 
-import typesense
+import typesense as search_engine
 from src.config import Config
 from typing import List, Dict
 import sys
 
 
 class SynonymManager:
-    """Manages Typesense synonyms for the products collection."""
+    """Manages synonyms for the products collection."""
 
     def __init__(self):
-        self.client = typesense.Client({
+        self.client = search_engine.Client({
             'nodes': [{
-                'host': Config.TYPESENSE_HOST,
-                'port': Config.TYPESENSE_PORT,
-                'protocol': Config.TYPESENSE_PROTOCOL
+                'host': Config.SEARCH_HOST,
+                'port': Config.SEARCH_PORT,
+                'protocol': Config.SEARCH_PROTOCOL
             }],
-            'api_key': Config.TYPESENSE_API_KEY,
+            'api_key': Config.SEARCH_API_KEY,
             'connection_timeout_seconds': 10
         })
-        self.collection_name = Config.TYPESENSE_COLLECTION_NAME
+        self.collection_name = Config.SEARCH_COLLECTION_NAME
 
     def get_synonym_groups(self) -> List[Dict]:
         """

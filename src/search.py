@@ -15,7 +15,7 @@ How it works:
     5. Search engine executes search and returns results
 """
 
-import typesense
+import typesense as search_engine
 from typing import List, Dict, Any, Optional, Tuple
 from config import Config
 from models import SearchResponse, Product
@@ -28,16 +28,16 @@ class Search:
 
     def __init__(self):
         """Initialize search client."""
-        self.search_client = typesense.Client({
-            'api_key': Config.TYPESENSE_API_KEY,
+        self.search_client = search_engine.Client({
+            'api_key': Config.SEARCH_API_KEY,
             'nodes': [{
-                'host': Config.TYPESENSE_HOST,
-                'port': Config.TYPESENSE_PORT,
-                'protocol': Config.TYPESENSE_PROTOCOL
+                'host': Config.SEARCH_HOST,
+                'port': Config.SEARCH_PORT,
+                'protocol': Config.SEARCH_PROTOCOL
             }],
             'connection_timeout_seconds': 30  # Longer timeout for NL queries
         })
-        self.collection_name = Config.TYPESENSE_COLLECTION_NAME
+        self.collection_name = Config.SEARCH_COLLECTION_NAME
 
     def _detect_size_pattern(self, query: str) -> Optional[Tuple[str, str]]:
         """

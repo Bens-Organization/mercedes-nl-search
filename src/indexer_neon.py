@@ -1,7 +1,7 @@
-"""Script to index Mercedes products from Neon database into Typesense."""
+"""Script to index Mercedes products from Neon database into search engine."""
 import os
 import json
-import typesense
+import typesense as search_engine
 import psycopg2
 from typing import List, Dict, Any
 from config import Config
@@ -12,12 +12,12 @@ Config.validate()
 
 
 class NeonProductIndexer:
-    """Index Mercedes Scientific products from Neon database to Typesense."""
+    """Index Mercedes Scientific products from Neon database to search engine."""
 
     def __init__(self):
         """Initialize indexer."""
-        self.typesense_client = typesense.Client(Config.get_typesense_config())
-        self.collection_name = Config.TYPESENSE_COLLECTION_NAME
+        self.search_client = search_engine.Client(Config.get_search_config())
+        self.collection_name = Config.SEARCH_COLLECTION_NAME
 
         # Get Neon connection string from environment
         self.neon_connection_string = os.getenv("NEON_DATABASE_URL")
@@ -25,7 +25,7 @@ class NeonProductIndexer:
             raise ValueError("NEON_DATABASE_URL environment variable is required")
 
     def create_collection(self):
-        """Create Typesense collection with schema."""
+        """Create search engine collection with schema."""
         schema = {
             "name": self.collection_name,
             "fields": [
@@ -103,7 +103,7 @@ class NeonProductIndexer:
             # Check if collection already exists
             collection_exists = False
             try:
-                self.typesense_client.collections[self.collection_name].retrieve()
+                self.search_client.collections[self.collection_name].retrieve()
                 collection_exists = True
             except Exception:
                 pass
@@ -119,11 +119,11 @@ class NeonProductIndexer:
                     return
 
                 # Delete existing collection
-                self.typesense_client.collections[self.collection_name].delete()
+                self.search_client.collections[self.collection_name].delete()
                 print(f"✓ Deleted existing collection: {self.collection_name}")
 
             # Create new collection
-            self.typesense_client.collections.create(schema)
+            self.search_client.collections.create(schema)
             print(f"✓ Created collection: {self.collection_name}")
 
         except Exception as e:
@@ -529,7 +529,7 @@ class NeonProductIndexer:
         return normalized
 
     def _transform_neon_product(self, row) -> Dict[str, Any]:
-        """Transform Neon database row to Typesense document."""
+        """Transform Neon database row to search document."""
         try:
             sku, name, description, short_description, price, special_price, product_type, url_key, base_image, categories, additional_attributes, weight, qty, created_at, updated_at, is_in_stock = row
 
@@ -705,10 +705,10 @@ class NeonProductIndexer:
         import requests
 
         model_id = "openai-gpt4o-mini"
-        base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
+        base_url = f"{Config.SEARCH_PROTOCOL}://{Config.SEARCH_HOST}:{Config.SEARCH_PORT}"
 
         headers = {
-            "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
+            "X-TYPESENSE-API-KEY": Config.SEARCH_API_KEY,  # Header name required by search engine API
             "Content-Type": "application/json"
         }
 
@@ -720,20 +720,20 @@ class NeonProductIndexer:
                 print(f"\n✓ Natural Language Search model '{model_id}' is configured")
             else:
                 print(f"\n⚠ WARNING: Natural Language Search model not configured!")
-                print(f"   Model '{model_id}' does not exist in Typesense.")
+                print(f"   Model '{model_id}' does not exist in search engine.")
                 print(f"   Your search will work, but NL features (filter extraction, etc.) will be limited.")
                 print(f"   Run: python src/setup_nl_model.py")
         except Exception:
             print(f"\n⚠ WARNING: Natural Language Search model not configured!")
-            print(f"   Model '{model_id}' does not exist in Typesense.")
+            print(f"   Model '{model_id}' does not exist in search engine.")
             print(f"   Your search will work, but NL features (filter extraction, etc.) will be limited.")
             print(f"   Run: python src/setup_nl_model.py")
         print()
 
     def index_products(self, products: List[Dict[str, Any]], batch_size: int = 100):
-        """Index products to Typesense with auto-embeddings."""
+        """Index products to search engine with auto-embeddings."""
         total_batches = (len(products) + batch_size - 1) // batch_size
-        print(f"\nIndexing {len(products):,} products to Typesense...")
+        print(f"\nIndexing {len(products):,} products to search engine...")
         print(f"Batches: {total_batches} (batch size: {batch_size})")
         print(f"Note: Embeddings are generated automatically during indexing\n")
 
@@ -745,8 +745,8 @@ class NeonProductIndexer:
             batch_num = i // batch_size + 1
 
             try:
-                # Import documents (embeddings generated automatically by Typesense)
-                result = self.typesense_client.collections[self.collection_name].documents.import_(
+                # Import documents (embeddings generated automatically by search engine)
+                result = self.search_client.collections[self.collection_name].documents.import_(
                     batch,
                     {"action": "create"}
                 )
@@ -791,7 +791,7 @@ class NeonProductIndexer:
     def run(self, max_products: int = None):
         """Run the complete indexing process."""
         print("=" * 60)
-        print("Mercedes Scientific Product Indexer (Neon → Typesense)")
+        print("Mercedes Scientific Product Indexer (Neon → Search Engine)")
         print("=" * 60)
 
         if max_products:

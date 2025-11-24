@@ -1,7 +1,7 @@
-"""Script to index Mercedes products from Magento 2 database into Typesense."""
+"""Script to index Mercedes products from Magento 2 database into search engine."""
 import os
 import json
-import typesense
+import typesense as search_engine
 from typing import List, Dict, Any
 from config import Config
 from models import Product
@@ -19,12 +19,12 @@ Config.validate()
 
 
 class MagentoProductIndexer:
-    """Index Mercedes Scientific products from Magento 2 MySQL database to Typesense."""
+    """Index Mercedes Scientific products from Magento 2 MySQL database to search engine."""
 
     def __init__(self):
         """Initialize indexer."""
-        self.typesense_client = typesense.Client(Config.get_typesense_config())
-        self.collection_name = Config.TYPESENSE_COLLECTION_NAME
+        self.search_client = search_engine.Client(Config.get_search_config())
+        self.collection_name = Config.SEARCH_COLLECTION_NAME
 
         # Get Magento MySQL connection details from environment
         self.mysql_host = os.getenv("MAGENTO_DB_HOST")
@@ -44,7 +44,7 @@ class MagentoProductIndexer:
             )
 
     def create_collection(self):
-        """Create Typesense collection with schema (same as Neon indexer)."""
+        """Create search engine collection with schema (same as Neon indexer)."""
         schema = {
             "name": self.collection_name,
             "fields": [
@@ -122,7 +122,7 @@ class MagentoProductIndexer:
             # Check if collection exists
             collection_exists = False
             try:
-                self.typesense_client.collections[self.collection_name].retrieve()
+                self.search_client.collections[self.collection_name].retrieve()
                 collection_exists = True
             except Exception:
                 pass
@@ -138,11 +138,11 @@ class MagentoProductIndexer:
                     return
 
                 # Delete existing collection
-                self.typesense_client.collections[self.collection_name].delete()
+                self.search_client.collections[self.collection_name].delete()
                 print(f"✓ Deleted existing collection: {self.collection_name}")
 
             # Create new collection
-            self.typesense_client.collections.create(schema)
+            self.search_client.collections.create(schema)
             print(f"✓ Created collection: {self.collection_name}")
 
         except Exception as e:
@@ -928,7 +928,7 @@ class MagentoProductIndexer:
     def _transform_magento_product(self, row, attribute_ids: Dict[str, int],
                                    option_values: Dict[str, str],
                                    all_categories: Dict[int, List[str]]) -> Dict[str, Any]:
-        """Transform Magento database row to Typesense document using pre-loaded data."""
+        """Transform Magento database row to search document using pre-loaded data."""
         try:
             (entity_id, sku, type_id, created_at, updated_at,
              name, url_key, description, short_description,
@@ -1028,9 +1028,9 @@ class MagentoProductIndexer:
             return None
 
     def index_products(self, products: List[Dict[str, Any]], batch_size: int = 100):
-        """Index products to Typesense (same as Neon indexer)."""
+        """Index products to search engine (same as Neon indexer)."""
         total_batches = (len(products) + batch_size - 1) // batch_size
-        print(f"\nIndexing {len(products):,} products to Typesense...")
+        print(f"\nIndexing {len(products):,} products to search engine...")
         print(f"Batches: {total_batches} (batch size: {batch_size})")
         print(f"Note: Embeddings are generated automatically during indexing\n")
 
@@ -1042,7 +1042,7 @@ class MagentoProductIndexer:
             batch_num = i // batch_size + 1
 
             try:
-                result = self.typesense_client.collections[self.collection_name].documents.import_(
+                result = self.search_client.collections[self.collection_name].documents.import_(
                     batch,
                     {"action": "create"}
                 )
@@ -1083,7 +1083,7 @@ class MagentoProductIndexer:
     def run(self, max_products: int = None):
         """Run the complete indexing process."""
         print("=" * 60)
-        print("Mercedes Scientific Product Indexer (Magento → Typesense)")
+        print("Mercedes Scientific Product Indexer (Magento → Search Engine)")
         print("=" * 60)
 
         if max_products:

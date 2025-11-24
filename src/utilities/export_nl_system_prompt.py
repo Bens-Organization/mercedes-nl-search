@@ -1,6 +1,6 @@
-"""Export the NL model's system prompt from Typesense.
+"""Export the NL model's system prompt from search engine.
 
-This script retrieves the registered NL model configuration from Typesense
+This script retrieves the registered NL model configuration from the search engine
 and exports its system prompt to a text file.
 """
 import sys
@@ -20,32 +20,32 @@ Config.validate()
 
 def export_system_prompt(output_file: str = None):
     """
-    Export the NL model's system prompt from Typesense.
+    Export the NL model's system prompt from search engine.
 
     Args:
-        output_file: Path to output file (default: database/{TYPESENSE_HOST}/nl_model_system_prompt.txt)
+        output_file: Path to output file (default: database/{SEARCH_HOST}/nl_model_system_prompt.txt)
     """
-    # Build Typesense URL
-    base_url = f"{Config.TYPESENSE_PROTOCOL}://{Config.TYPESENSE_HOST}:{Config.TYPESENSE_PORT}"
+    # Build search engine URL
+    base_url = f"{Config.SEARCH_PROTOCOL}://{Config.SEARCH_HOST}:{Config.SEARCH_PORT}"
 
-    # Default output file - organized by Typesense host
+    # Default output file - organized by search host
     if output_file is None:
-        output_dir = Path("database") / Config.TYPESENSE_HOST
+        output_dir = Path("database") / Config.SEARCH_HOST
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = str(output_dir / "nl_model_system_prompt.txt")
 
-    # The model ID (UUID assigned by Typesense)
+    # The model ID (UUID assigned by search engine)
     model_id = "openai-gpt4o-mini"
 
     print("=" * 70)
     print("NL Model System Prompt Exporter")
     print("=" * 70)
-    print(f"Typesense URL: {base_url}")
+    print(f"Search Engine URL: {base_url}")
     print(f"Model ID: {model_id}")
     print("=" * 70)
 
     headers = {
-        "X-TYPESENSE-API-KEY": Config.TYPESENSE_API_KEY,
+        "X-TYPESENSE-API-KEY": Config.SEARCH_API_KEY,  # Header name required by search engine API
         "Content-Type": "application/json"
     }
 
@@ -114,9 +114,9 @@ def export_system_prompt(output_file: str = None):
     except requests.exceptions.RequestException as e:
         print(f"\n✗ Connection error: {e}")
         print("\nTroubleshooting:")
-        print("  1. Ensure Typesense server is running")
-        print(f"  2. Check Typesense URL: {base_url}")
-        print("  3. Verify TYPESENSE_API_KEY in .env")
+        print("  1. Ensure search engine server is running")
+        print(f"  2. Check search engine URL: {base_url}")
+        print("  3. Verify SEARCH_API_KEY in .env")
         sys.exit(1)
 
     except Exception as e:

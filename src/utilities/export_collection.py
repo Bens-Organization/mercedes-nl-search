@@ -1,23 +1,23 @@
-"""Export Typesense collection to CSV."""
+"""Export search engine collection to CSV."""
 import csv
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any
 
-import typesense
+import typesense as search_engine
 
 from config import Config
 
 
 class CollectionExporter:
-    """Export Typesense collection to CSV."""
+    """Export search engine collection to CSV."""
 
     def __init__(self):
         """Initialize exporter."""
         Config.validate()
-        self.client = typesense.Client(Config.get_typesense_config())
-        self.collection_name = Config.TYPESENSE_COLLECTION_NAME
+        self.client = search_engine.Client(Config.get_search_config())
+        self.collection_name = Config.SEARCH_COLLECTION_NAME
 
     def export_to_csv(self, output_path: str = None, max_products: int = None) -> str:
         """
@@ -66,7 +66,7 @@ class CollectionExporter:
         """
         documents = []
         page = 1
-        per_page = 250  # Typesense max
+        per_page = 250  # Search engine max
 
         while True:
             try:
