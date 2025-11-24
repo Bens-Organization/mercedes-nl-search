@@ -1,5 +1,6 @@
 'use client';
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import Heading from '@/components/Heading';
 import { PlaceholdersAndVanishInput } from '@/components/ui/placeholders-and-vanish-input';
@@ -28,7 +29,26 @@ interface SearchStats {
   typesenseQuery: any;
 }
 
+// Wrapper component to handle Suspense boundary for useSearchParams
 export default function Home() {
+  return (
+    <Suspense fallback={
+      <main className="flex flex-col items-center px-8 py-10 max-w-screen-lg m-auto font-medium bg-white rounded-lg shadow-sm my-8">
+        <div className="flex flex-col items-center my-10">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p className="mt-4">Loading...</p>
+        </div>
+      </main>
+    }>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   // Check if we should show debug info
   // Only show if explicitly set to 'development' OR running on localhost
   const environment = process.env.NEXT_PUBLIC_ENVIRONMENT;
@@ -46,6 +66,7 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [hoveredExampleIndex, setHoveredExampleIndex] = useState<number | undefined>(undefined);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   const exampleQueries = [
     'Gloves in stock under $50',
@@ -58,7 +79,7 @@ export default function Home() {
     'Centrifuge tubes, 50ml capacity',
   ];
 
-  const handleSearch = async (searchQuery: string, pageNum = 1, append = false) => {
+  const handleSearch = async (searchQuery: string, pageNum = 1, append = false, updateUrl = true) => {
     if (!searchQuery.trim()) {
       return;
     }
@@ -73,6 +94,13 @@ export default function Home() {
     setError(null);
     setHasSearched(true);
     setQuery(searchQuery);
+
+    // Update URL with query parameter (without page reload)
+    if (updateUrl && !append) {
+      const params = new URLSearchParams();
+      params.set('query', searchQuery);
+      router.push(`?${params.toString()}`, { scroll: false });
+    }
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -133,6 +161,19 @@ export default function Home() {
     }
   };
 
+  // Read query from URL on initial page load
+  useEffect(() => {
+    if (initialLoadDone) return;
+
+    const queryFromUrl = searchParams.get('query');
+    if (queryFromUrl) {
+      setQuery(queryFromUrl);
+      handleSearch(queryFromUrl, 1, false, false); // Don't update URL again
+    }
+    setInitialLoadDone(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, initialLoadDone]);
+
   const handleLoadMore = () => {
     const nextPage = page + 1;
     setPage(nextPage);
@@ -158,6 +199,8 @@ export default function Home() {
     setQuery('');
     setResults([]);
     setStats(null);
+    // Clear query from URL
+    router.push('/', { scroll: false });
     setError(null);
     setPage(1);
     setHasMore(false);
