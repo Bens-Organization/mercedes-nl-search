@@ -362,6 +362,35 @@ def build_enriched_prompt(
 - Look at the categories in the retrieved products above
 - Pick the category that BEST matches the user's query intent
 
+**Primary Product vs Qualifier Detection** (CRITICAL - Identify What User is Actually Searching For):
+When a query contains multiple product types, identify the PRIMARY product vs QUALIFIER phrases:
+
+- **Pattern: "X for Y"** → X is the PRIMARY product, Y is a qualifier (use case/compatibility)
+  - "cover glass **for** microscope slides" → PRIMARY: cover glass, QUALIFIER: microscope slides
+  - "tips **for** pipettes" → PRIMARY: tips, QUALIFIER: pipettes
+  - "boxes **for** slides" → PRIMARY: boxes/storage, QUALIFIER: slides
+  - "labels **for** cassettes" → PRIMARY: labels, QUALIFIER: cassettes
+  - "racks **for** tubes" → PRIMARY: racks, QUALIFIER: tubes
+
+- **Pattern: "X to use with Y"** → X is PRIMARY, Y is qualifier
+- **Pattern: "X compatible with Y"** → X is PRIMARY, Y is qualifier
+- **Pattern: "X for use on Y"** → X is PRIMARY, Y is qualifier
+
+- **How to identify**: The PRIMARY product is typically:
+  - The FIRST noun phrase in the query
+  - What the user wants to BUY/FIND
+  - The product that will appear in search results
+
+- **The QUALIFIER is**:
+  - Describes intended use or compatibility
+  - Usually follows "for", "with", "to use on"
+  - Should NOT determine the category filter
+
+- **Category selection**: Always select category based on the PRIMARY product, NOT the qualifier
+  - "cover glass for microscope slides" → Use Coverslips category (not Microscope Slides)
+  - "tips for pipettes" → Use Pipette Tips category (not Pipettes)
+  - "storage boxes for slides" → Use Storage category (not Microscope Slides)
+
 **Parent vs Specific Category Selection** (CRITICAL - Check First):
 - **Use PARENT category** when:
   - Query is BROAD/GENERIC without modifiers (e.g., "stains", "gloves", "tubes", "slides")
@@ -523,14 +552,30 @@ Query: "gloves"
 Retrieved categories: ["Products/Gloves & Apparel/Gloves" (mix of nitrile, latex, vinyl), "Brand: Ansell", "Brand: Medline"]
 → {{"q": "glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Gloves & Apparel / Gloves", "category_confidence": 0.85, "category_reasoning": "Broad query with mixed glove types - using parent Gloves category to include all glove materials"}}
 
-Example 13 - SYNONYM AWARENESS: Cover glass = Coverslips (CRITICAL):
+Example 13 - PRIMARY PRODUCT vs QUALIFIER (CRITICAL - "X for Y" pattern):
 Query: "cover glass for microscope slides"
 Retrieved categories: ["Products / Microscope Slides" (6 products), "Root Catalog / Coverslips & Control Slides / Coverslips" (45 products)]
-→ {{"q": "cover glass microscope slide", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Root Catalog /  Coverslips & Control Slides / Coverslips", "category_confidence": 0.95, "category_reasoning": "Cover glass = coverglass = coverslip (synonyms). User wants coverslips for microscope slides, NOT the slides themselves. Use Coverslips category even though 'microscope slides' appears in query."}}
+→ {{"q": "cover glass microscope slide", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Root Catalog /  Coverslips & Control Slides / Coverslips", "category_confidence": 0.95, "category_reasoning": "PRIMARY product is 'cover glass' (=coverslip), 'for microscope slides' is just a qualifier. User wants to BUY cover glass, not microscope slides. Use Coverslips category."}}
 
-**Synonym Awareness** (CRITICAL - avoid wrong category):
-- "cover glass" / "coverglass" / "coverslip" / "cover slip" → Use Coverslips category (NOT Microscope Slides)
-- Focus on the PRIMARY product being searched, not qualifier phrases like "for microscope slides"
+Example 14 - PRIMARY PRODUCT vs QUALIFIER (tips for pipettes):
+Query: "filter tips for pipettes"
+Retrieved categories: ["Products / Pipettes" (10 products), "Products / Pipette Tips" (40 products)]
+→ {{"q": "filter tip pipette", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Pipette Tips", "category_confidence": 0.9, "category_reasoning": "PRIMARY product is 'filter tips', 'for pipettes' is qualifier. User wants tips, not pipettes themselves."}}
+
+Example 15 - PRIMARY PRODUCT vs QUALIFIER (storage for slides):
+Query: "storage boxes for microscope slides"
+Retrieved categories: ["Products / Microscope Slides" (5 products), "Products / Storage / Slide Boxes" (25 products)]
+→ {{"q": "storage box microscope slide", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Storage / Slide Boxes", "category_confidence": 0.9, "category_reasoning": "PRIMARY product is 'storage boxes', 'for microscope slides' is qualifier. User wants storage containers, not the slides."}}
+
+Example 16 - PRIMARY PRODUCT vs QUALIFIER (labels for cassettes):
+Query: "labels for tissue cassettes"
+Retrieved categories: ["Cryotomy & Grossing / Cassettes" (8 products), "Products / Labels" (15 products)]
+→ {{"q": "label tissue cassette", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products / Labels", "category_confidence": 0.85, "category_reasoning": "PRIMARY product is 'labels', 'for tissue cassettes' is qualifier describing use case. User wants labels, not cassettes."}}
+
+**Primary Product Detection** (CRITICAL - avoid wrong category):
+- In "X for Y" queries, X is what the user wants to BUY, Y is context/compatibility
+- Always select category based on PRIMARY product (X), never the qualifier (Y)
+- Common patterns: "X for Y", "X to use with Y", "X compatible with Y"
 
 Note: Middleware will automatically prepend "in_stock_priority:desc,brand_priority:desc" to all sort_by values!
 """
@@ -663,23 +708,9 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
         print(f"[RAG] Confidence: {category_confidence:.2f} (threshold: {confidence_threshold})")
         print(f"[RAG] Reasoning: {category_reasoning}")
 
-        # Override category for "cover glass" queries
-        # The LLM often detects "microscope slides" from queries like "cover glass for microscope slides"
-        # but cover glass/coverglass/coverslip products are in the "Coverslips" category, not "Microscope Slides"
-        if user_query:
-            query_lower = user_query.lower()
-            cover_glass_terms = ['cover glass', 'coverglass', 'coverslip', 'cover slip']
-            is_cover_glass_query = any(term in query_lower for term in cover_glass_terms)
-
-            if is_cover_glass_query:
-                # Override to Coverslips category with high confidence
-                # Use partial match to catch "Root Catalog / Coverslips & Control Slides / Coverslips"
-                print(f"[RAG] ⚠️  Cover glass query detected - overriding category to Coverslips")
-                print(f"[RAG]    Original category: {detected_category}")
-                detected_category = "Coverslips"  # Will use partial match below
-                category_confidence = 0.95
-                category_reasoning = "Cover glass/coverglass/coverslip query - using Coverslips category"
-                print(f"[RAG]    New category: {detected_category} (confidence: {category_confidence})")
+        # NOTE: "Primary Product vs Qualifier Detection" is now handled in the LLM prompt
+        # The prompt teaches the LLM to identify "X for Y" patterns and select category based on X (primary product)
+        # Examples: "cover glass for microscope slides" → Coverslips, "tips for pipettes" → Pipette Tips
 
         if for_typesense_nl:
             # Option A: Typesense NL Integration (Single LLM Call)
