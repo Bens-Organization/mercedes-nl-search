@@ -456,11 +456,20 @@ IMPORTANT:
 - If detected_category is not null AND category_confidence >= 0.75, it will be applied to filter_by automatically
 - Be CONSERVATIVE with category detection - null is better than wrong category
 
-**Conservative Filter Rules**:
-- DO NOT extract color/size/brand as filters (keep in "q" for semantic search)
-- ALWAYS extract price when mentioned (exact: price:=X, range: price:<X or price:>X)
-- ALWAYS extract stock when mentioned (stock_status:=IN_STOCK)
-- ALWAYS extract special_price for "on sale" (special_price:>0)
+**Conservative Filter Rules** (CRITICAL - only filter by reliable fields):
+
+**ONLY use filter_by for these RELIABLE fields**:
+- price: Extract when mentioned (exact: price:=X, range: price:<X or price:>X)
+- stock_status: Extract when "in stock" mentioned (stock_status:=IN_STOCK)
+- special_price: Extract for "on sale" queries (special_price:>0)
+- restricted_class: Extract when restriction mentioned (restricted_class:!=null to exclude restricted)
+
+**NEVER use filter_by for these UNRELIABLE fields** (keep in "q" for semantic search):
+- color: "blue gloves" → q: "blue glove" (NOT filter_by: color:=Blue)
+- size: "XL gloves" → q: "XL glove" (NOT filter_by: size:=X-Large)
+- brand: "Ansell gloves" → q: "Ansell glove" (NOT filter_by: brand:=Ansell)
+- thickness: "5mil gloves" → q: "5mil glove" (NOT filter_by)
+- Any other product attribute with incomplete data
 
 **Examples** (RAG-based category selection - 7 key patterns):
 
@@ -487,6 +496,16 @@ Example 3c - Product with THICKNESS (keep measurement in query):
 Query: "5mil gloves"
 Retrieved: ["Products/Gloves & Apparel/Gloves"]
 → {{"q": "5mil glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Gloves with specific thickness - keep 5mil in query"}}
+
+Example 3d - Product with COLOR (keep in query, NOT filter):
+Query: "blue nitrile gloves"
+Retrieved: ["Products/Gloves & Apparel/Gloves"]
+→ {{"q": "blue nitrile glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Keep 'blue' in query for semantic matching - do NOT use color filter (unreliable data)"}}
+
+Example 3e - Product with BRAND (keep in query, NOT filter):
+Query: "Ansell nitrile gloves"
+Retrieved: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell"]
+→ {{"q": "Ansell nitrile glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Keep 'Ansell' in query for semantic matching - do NOT use brand filter (unreliable data)"}}
 
 Example 4 - Ambiguous query (return null):
 Query: "clear" or "Mercedes Scientific"
