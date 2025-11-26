@@ -145,6 +145,48 @@ def extract_schema_info(messages: List[ChatMessage]) -> Dict[str, Any]:
     return {"system_prompt": "", "has_schema": False}
 
 
+def strip_size_terms_for_retrieval(query: str) -> str:
+    """
+    Strip size/attribute terms from query for retrieval context.
+
+    Size terms like "XL" match many products (lab coats, bandages)
+    and drown out the actual product type (nitrile gloves). For retrieval, we want
+    to find the correct product category, not exact size matches.
+
+    The final search (after LLM processing) keeps size terms for semantic matching.
+
+    Examples:
+        "XL sized nitrile gloves" → "nitrile gloves"
+        "Large blue gloves" → "blue gloves"
+        "5mil gloves" → "gloves"
+        "extra large lab coat" → "lab coat"
+    """
+    # Size terms to strip (case-insensitive)
+    size_patterns = [
+        r'\bXS\b', r'\bX-Small\b', r'\bX Small\b', r'\bExtra Small\b', r'\bExtra-Small\b',
+        r'\bSM\b', r'\bSmall\b',
+        r'\bMed\b', r'\bMedium\b',
+        r'\bLG\b', r'\bLarge\b',
+        r'\bXL\b', r'\bX-Large\b', r'\bX Large\b', r'\bExtra Large\b', r'\bExtra-Large\b',
+        r'\bXXL\b', r'\bXX-Large\b', r'\bXX Large\b', r'\b2XL\b',
+        r'\bXXXL\b', r'\bXXX-Large\b', r'\b3XL\b',
+        r'\bsized\b',  # Remove "sized" as in "XL sized"
+        r'\b\d+mil\b',  # Thickness like "5mil"
+    ]
+
+    cleaned = query
+    for pattern in size_patterns:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+    # Clean up multiple spaces and trim
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    if cleaned != query:
+        print(f"[RAG] Stripped size terms for retrieval: '{query}' → '{cleaned}'")
+
+    return cleaned if cleaned else query  # Fallback to original if all stripped
+
+
 async def retrieve_products(query: str, limit: int = 20, collection_name: str = None) -> List[Dict[str, Any]]:
     """
     Run retrieval search against Typesense to get relevant products.
@@ -169,6 +211,11 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         print(f"[VALIDATION] Detected validation query: '{query}' - skipping Typesense retrieval")
         return []
 
+    # Strip size terms for retrieval to focus on product type
+    # "XL sized nitrile gloves" → retrieve "nitrile gloves" (find glove category)
+    # The final search still uses the full query with size terms for semantic matching
+    retrieval_query = strip_size_terms_for_retrieval(query)
+
     try:
         # Exclude storage categories for specific consumable queries
         # This prevents "microscope slide" from retrieving "Slide Mailers" (storage products)
@@ -176,17 +223,17 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
 
         # Storage keywords that indicate user wants storage products
         storage_keywords = ['storage', 'box', 'cabinet', 'holder', 'mailer', 'organizer', 'container', 'rack', 'drawer']
-        is_storage_query = any(keyword in query.lower() for keyword in storage_keywords)
+        is_storage_query = any(keyword in retrieval_query.lower() for keyword in storage_keywords)
 
         # Consumable keywords that should exclude storage from retrieval
         # Only exclude storage for these specific product types to prevent storage contamination
         consumable_keywords = ['slide', 'tube', 'pipette tip', 'glove', 'swab', 'plate', 'dish', 'flask', 'vial', 'bottle']
-        is_consumable_query = any(keyword in query.lower() for keyword in consumable_keywords)
+        is_consumable_query = any(keyword in retrieval_query.lower() for keyword in consumable_keywords)
 
         # Equipment keywords that should exclude consumables/slides from retrieval
         # "microscope" alone should return equipment, not "microscope slides"
         equipment_keywords = ['microscope', 'centrifuge', 'incubator', 'autoclave', 'balance', 'shaker', 'stirrer', 'mixer']
-        is_equipment_query = any(keyword == query.lower().strip() for keyword in equipment_keywords)
+        is_equipment_query = any(keyword == retrieval_query.lower().strip() for keyword in equipment_keywords)
 
         # FIX: Maximum diversity retrieval strategy
         # Remove categories from search, retrieve many products (60) for LLM to classify
@@ -205,7 +252,7 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         # Issue: Without categories, "slide" searches get slide printers context
         # Solution: Add categories back with LOW weight (2) for context without dominance
         search_params = {
-            "q": query,
+            "q": retrieval_query,  # Use stripped query for better category matching
             "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
             "query_by_weights": "100,100,4,4,5,5,2",  # LOW category weight for context only
             "text_match_type": "max_score",  # Cumulative scoring

@@ -322,7 +322,7 @@ class SynonymManager:
                 "synonyms": ["parafin", "paraffin"]
             },
 
-            # Clothing/Glove Size Synonyms (JAI-2209 fix)
+            # Clothing/Glove Size Synonyms
             # Helps "XL nitrile gloves" match products with "X-Large" in name
             {
                 "id": "size-xs",
