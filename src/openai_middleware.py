@@ -409,12 +409,13 @@ def build_enriched_prompt(
 
 **KEEP These Terms** (Enhance search relevance):
 - **Descriptive nouns**: capacity, volume, size, weight, length, diameter, thickness, width
-- **Measurements with units**: 50ml, 1L, 100mg, 5cm, 10x10, 29.5mm (keep exact format)
+- **Measurements with units**: 50ml, 1L, 100mg, 5cm, 10x10, 29.5mm, 5mil (keep exact format)
 - **Material/composition**: nitrile, latex, plastic, glass, steel, polypropylene, PP, HDPE
 - **Properties/adjectives**: sterile, disposable, reusable, autoclavable, graduated, conical
 - **Colors when specific**: blue, clear, white, amber (not just "colored")
 - **Brands with products**: "Thermo Fisher pipettes" → keep both
 - **Compound product names**: "centrifuge tube", "petri dish", "test tube"
+- **Clothing/glove sizes**: XL, X-Large, Large, Medium, Small, XS, X-Small, XXL (CRITICAL: Always keep these!)
 
 **REMOVE These Words** (Noise):
 - **Conversational fluff**: "I need", "I want", "looking for", "can you find", "show me"
@@ -476,6 +477,16 @@ Example 3 - Product with price filter:
 Query: "nitrile gloves under $50"
 Retrieved: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell"]
 → {{"q": "nitrile glove", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category"}}
+
+Example 3b - Product with SIZE (CRITICAL - keep size terms in query):
+Query: "XL nitrile gloves"
+Retrieved: ["Products/Gloves & Apparel/Gloves"]
+→ {{"q": "XL nitrile glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Gloves with specific size - keep XL in query for semantic matching"}}
+
+Example 3c - Product with THICKNESS (keep measurement in query):
+Query: "5mil gloves"
+Retrieved: ["Products/Gloves & Apparel/Gloves"]
+→ {{"q": "5mil glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Gloves with specific thickness - keep 5mil in query"}}
 
 Example 4 - Ambiguous query (return null):
 Query: "clear" or "Mercedes Scientific"

@@ -321,6 +321,37 @@ class SynonymManager:
                 "id": "parafin-paraffin",
                 "synonyms": ["parafin", "paraffin"]
             },
+
+            # Clothing/Glove Size Synonyms (JAI-2209 fix)
+            # Helps "XL nitrile gloves" match products with "X-Large" in name
+            {
+                "id": "size-xs",
+                "synonyms": ["XS", "X-Small", "X Small", "Extra Small", "Extra-Small"]
+            },
+            {
+                "id": "size-s",
+                "synonyms": ["Small", "SM"]
+            },
+            {
+                "id": "size-m",
+                "synonyms": ["Medium", "Med"]
+            },
+            {
+                "id": "size-l",
+                "synonyms": ["Large", "LG"]
+            },
+            {
+                "id": "size-xl",
+                "synonyms": ["XL", "X-Large", "X Large", "Extra Large", "Extra-Large"]
+            },
+            {
+                "id": "size-xxl",
+                "synonyms": ["XXL", "XX-Large", "XX Large", "2XL", "Extra Extra Large"]
+            },
+            {
+                "id": "size-xxxl",
+                "synonyms": ["XXXL", "XXX-Large", "3XL"]
+            },
         ]
 
     def setup_synonyms(self) -> None:
