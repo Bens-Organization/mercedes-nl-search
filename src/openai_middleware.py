@@ -145,6 +145,48 @@ def extract_schema_info(messages: List[ChatMessage]) -> Dict[str, Any]:
     return {"system_prompt": "", "has_schema": False}
 
 
+def strip_size_terms_for_retrieval(query: str) -> str:
+    """
+    Strip size/attribute terms from query for retrieval context.
+
+    Size terms like "XL" match many products (lab coats, bandages)
+    and drown out the actual product type (nitrile gloves). For retrieval, we want
+    to find the correct product category, not exact size matches.
+
+    The final search (after LLM processing) keeps size terms for semantic matching.
+
+    Examples:
+        "XL sized nitrile gloves" → "nitrile gloves"
+        "Large blue gloves" → "blue gloves"
+        "5mil gloves" → "gloves"
+        "extra large lab coat" → "lab coat"
+    """
+    # Size terms to strip (case-insensitive)
+    size_patterns = [
+        r'\bXS\b', r'\bX-Small\b', r'\bX Small\b', r'\bExtra Small\b', r'\bExtra-Small\b',
+        r'\bSM\b', r'\bSmall\b',
+        r'\bMed\b', r'\bMedium\b',
+        r'\bLG\b', r'\bLarge\b',
+        r'\bXL\b', r'\bX-Large\b', r'\bX Large\b', r'\bExtra Large\b', r'\bExtra-Large\b',
+        r'\bXXL\b', r'\bXX-Large\b', r'\bXX Large\b', r'\b2XL\b',
+        r'\bXXXL\b', r'\bXXX-Large\b', r'\b3XL\b',
+        r'\bsized\b',  # Remove "sized" as in "XL sized"
+        r'\b\d+mil\b',  # Thickness like "5mil"
+    ]
+
+    cleaned = query
+    for pattern in size_patterns:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+    # Clean up multiple spaces and trim
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    if cleaned != query:
+        print(f"[RAG] Stripped size terms for retrieval: '{query}' → '{cleaned}'")
+
+    return cleaned if cleaned else query  # Fallback to original if all stripped
+
+
 async def retrieve_products(query: str, limit: int = 20, collection_name: str = None) -> List[Dict[str, Any]]:
     """
     Run retrieval search against Typesense to get relevant products.
@@ -169,6 +211,11 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         print(f"[VALIDATION] Detected validation query: '{query}' - skipping Typesense retrieval")
         return []
 
+    # Strip size terms for retrieval to focus on product type
+    # "XL sized nitrile gloves" → retrieve "nitrile gloves" (find glove category)
+    # The final search still uses the full query with size terms for semantic matching
+    retrieval_query = strip_size_terms_for_retrieval(query)
+
     try:
         # Exclude storage categories for specific consumable queries
         # This prevents "microscope slide" from retrieving "Slide Mailers" (storage products)
@@ -176,17 +223,17 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
 
         # Storage keywords that indicate user wants storage products
         storage_keywords = ['storage', 'box', 'cabinet', 'holder', 'mailer', 'organizer', 'container', 'rack', 'drawer']
-        is_storage_query = any(keyword in query.lower() for keyword in storage_keywords)
+        is_storage_query = any(keyword in retrieval_query.lower() for keyword in storage_keywords)
 
         # Consumable keywords that should exclude storage from retrieval
         # Only exclude storage for these specific product types to prevent storage contamination
         consumable_keywords = ['slide', 'tube', 'pipette tip', 'glove', 'swab', 'plate', 'dish', 'flask', 'vial', 'bottle']
-        is_consumable_query = any(keyword in query.lower() for keyword in consumable_keywords)
+        is_consumable_query = any(keyword in retrieval_query.lower() for keyword in consumable_keywords)
 
         # Equipment keywords that should exclude consumables/slides from retrieval
         # "microscope" alone should return equipment, not "microscope slides"
         equipment_keywords = ['microscope', 'centrifuge', 'incubator', 'autoclave', 'balance', 'shaker', 'stirrer', 'mixer']
-        is_equipment_query = any(keyword == query.lower().strip() for keyword in equipment_keywords)
+        is_equipment_query = any(keyword == retrieval_query.lower().strip() for keyword in equipment_keywords)
 
         # FIX: Maximum diversity retrieval strategy
         # Remove categories from search, retrieve many products (60) for LLM to classify
@@ -205,7 +252,7 @@ async def retrieve_products(query: str, limit: int = 20, collection_name: str = 
         # Issue: Without categories, "slide" searches get slide printers context
         # Solution: Add categories back with LOW weight (2) for context without dominance
         search_params = {
-            "q": query,
+            "q": retrieval_query,  # Use stripped query for better category matching
             "query_by": "name,sku,name_normalized,sku_normalized,description,short_description,categories",
             "query_by_weights": "100,100,4,4,5,5,2",  # LOW category weight for context only
             "text_match_type": "max_score",  # Cumulative scoring
@@ -409,12 +456,13 @@ def build_enriched_prompt(
 
 **KEEP These Terms** (Enhance search relevance):
 - **Descriptive nouns**: capacity, volume, size, weight, length, diameter, thickness, width
-- **Measurements with units**: 50ml, 1L, 100mg, 5cm, 10x10, 29.5mm (keep exact format)
+- **Measurements with units**: 50ml, 1L, 100mg, 5cm, 10x10, 29.5mm, 5mil (keep exact format)
 - **Material/composition**: nitrile, latex, plastic, glass, steel, polypropylene, PP, HDPE
 - **Properties/adjectives**: sterile, disposable, reusable, autoclavable, graduated, conical
 - **Colors when specific**: blue, clear, white, amber (not just "colored")
 - **Brands with products**: "Thermo Fisher pipettes" → keep both
 - **Compound product names**: "centrifuge tube", "petri dish", "test tube"
+- **Clothing/glove sizes**: XL, X-Large, Large, Medium, Small, XS, X-Small, XXL (CRITICAL: Always keep these!)
 
 **REMOVE These Words** (Noise):
 - **Conversational fluff**: "I need", "I want", "looking for", "can you find", "show me"
@@ -455,11 +503,20 @@ IMPORTANT:
 - If detected_category is not null AND category_confidence >= 0.75, it will be applied to filter_by automatically
 - Be CONSERVATIVE with category detection - null is better than wrong category
 
-**Conservative Filter Rules**:
-- DO NOT extract color/size/brand as filters (keep in "q" for semantic search)
-- ALWAYS extract price when mentioned (exact: price:=X, range: price:<X or price:>X)
-- ALWAYS extract stock when mentioned (stock_status:=IN_STOCK)
-- ALWAYS extract special_price for "on sale" (special_price:>0)
+**Conservative Filter Rules** (CRITICAL - only filter by reliable fields):
+
+**ONLY use filter_by for these RELIABLE fields**:
+- price: Extract when mentioned (exact: price:=X, range: price:<X or price:>X)
+- stock_status: Extract when "in stock" mentioned (stock_status:=IN_STOCK)
+- special_price: Extract for "on sale" queries (special_price:>0)
+- restricted_class: Extract when restriction mentioned (restricted_class:!=null to exclude restricted)
+
+**NEVER use filter_by for these UNRELIABLE fields** (keep in "q" for semantic search):
+- color: "blue gloves" → q: "blue glove" (NOT filter_by: color:=Blue)
+- size: "XL gloves" → q: "XL glove" (NOT filter_by: size:=X-Large)
+- brand: "Ansell gloves" → q: "Ansell glove" (NOT filter_by: brand:=Ansell)
+- thickness: "5mil gloves" → q: "5mil glove" (NOT filter_by)
+- Any other product attribute with incomplete data
 
 **Examples** (RAG-based category selection - 7 key patterns):
 
@@ -476,6 +533,26 @@ Example 3 - Product with price filter:
 Query: "nitrile gloves under $50"
 Retrieved: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell"]
 → {{"q": "nitrile glove", "filter_by": "price:<50", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Clear product type matches Gloves category"}}
+
+Example 3b - Product with SIZE (CRITICAL - keep size terms in query):
+Query: "XL nitrile gloves"
+Retrieved: ["Products/Gloves & Apparel/Gloves"]
+→ {{"q": "XL nitrile glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Gloves with specific size - keep XL in query for semantic matching"}}
+
+Example 3c - Product with THICKNESS (keep measurement in query):
+Query: "5mil gloves"
+Retrieved: ["Products/Gloves & Apparel/Gloves"]
+→ {{"q": "5mil glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Gloves with specific thickness - keep 5mil in query"}}
+
+Example 3d - Product with COLOR (keep in query, NOT filter):
+Query: "blue nitrile gloves"
+Retrieved: ["Products/Gloves & Apparel/Gloves"]
+→ {{"q": "blue nitrile glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Keep 'blue' in query for semantic matching - do NOT use color filter (unreliable data)"}}
+
+Example 3e - Product with BRAND (keep in query, NOT filter):
+Query: "Ansell nitrile gloves"
+Retrieved: ["Products/Gloves & Apparel/Gloves", "Brand: Ansell"]
+→ {{"q": "Ansell nitrile glove", "filter_by": "", "sort_by": "", "per_page": 20, "detected_category": "Products/Gloves & Apparel/Gloves", "category_confidence": 0.85, "category_reasoning": "Keep 'Ansell' in query for semantic matching - do NOT use brand filter (unreliable data)"}}
 
 Example 4 - Ambiguous query (return null):
 Query: "clear" or "Mercedes Scientific"
