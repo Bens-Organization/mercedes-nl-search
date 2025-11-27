@@ -89,6 +89,20 @@ FILTER_PATTERNS = [
     r'recent',                          # "recent"
     r'new\s+arrivals?',                 # "new arrivals", "new arrival"
     r'just\s+(arrived|added)',          # "just arrived", "just added"
+
+    # CRITICAL: Negatable attributes (JAI-2210)
+    # "sterile" and "non-sterile" are semantically similar but mean OPPOSITE things
+    # Must use exact matching to prevent "sterile gloves" hitting "non-sterile gloves" cache
+    r'\bsterile\b',                     # "sterile gloves" (NOT "non-sterile")
+    r'\bnon-?sterile\b',                # "non-sterile", "nonsterile"
+    r'\blatex\b',                       # "latex gloves"
+    r'\blatex-?free\b',                 # "latex-free", "latexfree"
+    r'\bpowder-?free\b',                # "powder-free", "powderfree"
+    r'\bpowdered\b',                    # "powdered gloves"
+    r'\bcoated\b',                      # "coated slides"
+    r'\buncoated\b',                    # "uncoated slides"
+    r'\bfiltered\b',                    # "filtered tips"
+    r'\bunfiltered\b',                  # "unfiltered tips"
 ]
 
 
