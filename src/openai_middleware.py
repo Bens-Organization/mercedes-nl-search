@@ -173,103 +173,73 @@ SHORT_PREFIX_MIN_TERM_LENGTH = {
 }
 
 
-def apply_negation_filters(user_query: str, filter_by: str) -> str:
+def apply_negation_to_query(user_query: str, extracted_query: str) -> str:
     """
-    Dynamically apply negation filters for any term in the query.
+    Apply negation terms to the search query to demote unwanted results.
 
-    Handles BOTH directions:
-    1. "sterile" → exclude "non-sterile", "nonsterile" (user wants positive)
-    2. "non-sterile" → exclude standalone "sterile" (user wants negated)
+    IMPORTANT: Typesense filter_by does NOT support wildcard negation on non-faceted
+    string fields (like 'name'). The syntax 'name:!*pattern*' is silently ignored.
+
+    Instead, we add exclusion terms to the query itself using the '-term' syntax,
+    which tells Typesense to demote (not hard-exclude) documents containing those terms.
+
+    Example: "sterile gloves" → "sterile gloves -non-sterile -nonsterile"
 
     Args:
         user_query: Original user query
-        filter_by: Existing filter_by string
+        extracted_query: The query extracted by LLM (to be modified)
 
     Returns:
-        Updated filter_by with negation exclusions
+        Modified query with negation terms added
     """
     query_lower = user_query.lower()
     # Extract words that are 5+ chars (meaningful attribute words that can have negations)
     words = re.findall(r'\b[a-z]{5,}\b', query_lower)
-    negation_filters = []
+    exclusion_terms = []
     applied_terms = []
-    reverse_applied_terms = []
 
-    # PART 1: Handle positive term searches (e.g., "sterile" → exclude "non-sterile")
+    # Negation prefixes (without trailing hyphens/spaces for checking)
+    negation_prefixes_clean = ["non", "anti", "un", "in", "a"]
+
     for word in words:
-        # Check if user is already searching for a negated form
+        # Check if this word itself starts with a negation prefix (e.g., "nonsterile")
+        word_is_already_negated = any(
+            word.startswith(prefix) and len(word) > len(prefix) + 3
+            for prefix in negation_prefixes_clean
+        )
+
+        # Check if user is searching for a negated form of this word in the query
+        # e.g., "non-sterile" or "non sterile" when word is "sterile"
         is_searching_negated = any(
             f"{prefix}{word}" in query_lower or f"{prefix.strip()}{word}" in query_lower
             for prefix in SAFE_NEGATION_PREFIXES
         )
 
-        if is_searching_negated:
+        if word_is_already_negated or is_searching_negated:
             # User wants the negated form, don't exclude it
             continue
 
-        # Generate negation variants for this word
-        negated_forms = []
+        # Add negation terms to demote in search results
+        # Using -term syntax in Typesense query
+        # Only use non- and anti- prefixes (most common negations)
+        exclusion_terms.append(f"-non-{word}")    # -non-sterile
+        exclusion_terms.append(f"-non{word}")     # -nonsterile
+        exclusion_terms.append(f"-anti-{word}")   # -anti-sterile
+        exclusion_terms.append(f"-anti{word}")    # -antisterile
 
-        # Safe prefixes - apply to all qualifying words
-        for prefix in SAFE_NEGATION_PREFIXES:
-            negated_forms.append(f"{prefix.replace(' ', '')}{word}")  # nonsterile
-            negated_forms.append(f"{prefix.strip()}-{word}")  # non-sterile
-            if ' ' in prefix:
-                negated_forms.append(f"{prefix}{word}")  # non sterile
+        applied_terms.append(word)
 
-        # Short prefixes - only apply if word is long enough
-        for prefix, min_len in SHORT_PREFIX_MIN_TERM_LENGTH.items():
-            if len(word) >= min_len:
-                negated_forms.append(f"{prefix}{word}")  # unsterile, apyrogenic
+    if exclusion_terms and applied_terms:
+        # Deduplicate exclusions
+        unique_exclusions = list(set(exclusion_terms))
 
-        # Add exclusion filters for each negated form
-        for neg_form in negated_forms:
-            negation_filters.append(f"name:!*{neg_form}*")
+        if unique_exclusions:
+            modified_query = f"{extracted_query} {' '.join(unique_exclusions)}"
+            print(f"[NEGATION] Added query exclusions for terms: {applied_terms}")
+            print(f"[NEGATION] Modified query: {modified_query}")
+            return modified_query
 
-        if negated_forms:
-            applied_terms.append(word)
-
-    # PART 2: Handle negated term searches (e.g., "non-sterile" → exclude standalone "sterile")
-    # Detect patterns like "non-sterile", "nonsterile", "non sterile" in the query
-    for prefix in SAFE_NEGATION_PREFIXES:
-        prefix_clean = prefix.strip().rstrip('-')  # "non-" → "non", "non " → "non"
-
-        # Find negated terms in query: "non-sterile", "nonsterile", "non sterile"
-        patterns = [
-            rf'{prefix_clean}-([a-z]{{5,}})',   # non-sterile
-            rf'{prefix_clean}([a-z]{{5,}})',    # nonsterile
-            rf'{prefix_clean} ([a-z]{{5,}})',   # non sterile
-        ]
-
-        for pattern in patterns:
-            matches = re.findall(pattern, query_lower)
-            for base_word in matches:
-                if base_word and len(base_word) >= 5:
-                    # User is searching for negated form, exclude the positive form
-                    # Exclude " sterile " (with word boundaries via spaces/punctuation)
-                    # This excludes "Sterile Gloves" but keeps "Non-Sterile Gloves"
-                    negation_filters.append(f"name:!*, {base_word.capitalize()} *")
-                    negation_filters.append(f"name:!*, {base_word.capitalize()},*")
-                    negation_filters.append(f"name:!*({base_word.capitalize()})*")
-                    reverse_applied_terms.append(f"{prefix_clean}-{base_word}")
-
-    if negation_filters:
-        # Use unique filters only
-        unique_filters = list(set(negation_filters))
-        negation_clause = " && ".join(unique_filters)
-
-        if applied_terms:
-            print(f"[NEGATION] Positive terms: {applied_terms} → excluding negated variants")
-        if reverse_applied_terms:
-            print(f"[NEGATION] Negated terms: {reverse_applied_terms} → excluding positive variants")
-        print(f"[NEGATION] Total {len(unique_filters)} exclusion filters")
-
-        if filter_by:
-            return f"{filter_by} && {negation_clause}"
-        else:
-            return negation_clause
-
-    return filter_by
+    return extracted_query
 
 
 def extract_product_type_fast(query: str) -> str:
@@ -1078,14 +1048,15 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             params["sort_by"] = "in_stock_priority:desc,brand_priority:desc"
             print(f"[SORT] Applied default stock-aware brand priority sorting")
 
-        # Apply negation filters (JAI-2210: "sterile" should not return "Non-Sterile")
-        # This must be done AFTER category filter to combine properly
+        # Apply negation to query (JAI-2210: "sterile" should not return "Non-Sterile")
+        # NOTE: Typesense filter_by does NOT support wildcard negation on non-faceted fields!
+        # The syntax 'name:!*pattern*' is silently ignored. Instead, we add -term exclusions
+        # to the query itself, which demotes (not hard-excludes) unwanted results.
         if user_query:
-            current_filter = params.get("filter_by", "")
-            updated_filter = apply_negation_filters(user_query, current_filter)
-            if updated_filter != current_filter:
-                params["filter_by"] = updated_filter
-                print(f"[NEGATION] Applied negation filters: {updated_filter}")
+            current_query = params.get("q", "")
+            updated_query = apply_negation_to_query(user_query, current_query)
+            if updated_query != current_query:
+                params["q"] = updated_query
 
         # Remove empty string fields (Typesense prefers omitted fields over empty strings)
         if params.get("sort_by") == "":

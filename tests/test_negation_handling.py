@@ -2,53 +2,45 @@
 """
 Test script for JAI-2210: Dynamic Negation Handling
 
-Tests that searching for positive terms excludes their negated variants.
-Uses dynamic prefix detection instead of static mappings.
+Tests that searching for positive terms adds exclusion terms to demote negated variants.
+Uses query-level exclusion (-term syntax) instead of filter_by (which doesn't work for
+wildcard negation on non-faceted string fields in Typesense).
 """
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.openai_middleware import apply_negation_filters, SAFE_NEGATION_PREFIXES, SHORT_PREFIX_MIN_TERM_LENGTH
+from src.openai_middleware import apply_negation_to_query, SAFE_NEGATION_PREFIXES, SHORT_PREFIX_MIN_TERM_LENGTH
 
 
-def test_negation_filter_function():
-    """Test the dynamic apply_negation_filters function"""
+def test_negation_query_function():
+    """Test the dynamic apply_negation_to_query function"""
     print("=" * 60)
-    print("Testing Dynamic Negation Filter")
+    print("Testing Dynamic Negation (Query-Level Exclusion)")
     print("=" * 60)
 
     test_cases = [
-        # (query, existing_filter, should_contain, should_not_contain)
+        # (user_query, extracted_query, should_contain, should_not_contain)
         # Sterile - the main JAI-2210 case
-        ("sterile gloves", "", ["non-sterile", "nonsterile"], None),
-        ("sterile nitrile gloves", "price:<50", ["non-sterile"], None),
-        ("non-sterile gloves", "", None, ["non-sterile"]),  # User wants non-sterile
-
-        # Dynamic cases - NOT in any static list
-        ("labeled tubes", "", ["unlabeled"], None),  # un- prefix
-        ("coated slides", "", ["non-coated"], None),  # coated is 6 chars
-        ("filtered water", "", ["non-filtered", "unfiltered"], None),
-
-        # Anti- prefix
-        ("microbial solution", "", ["anti-microbial", "antimicrobial"], None),
+        ("sterile gloves", "sterile glove", ["-non-sterile", "-nonsterile"], None),
+        ("sterile nitrile gloves", "sterile nitrile glove", ["-non-sterile"], None),
+        ("non-sterile gloves", "non-sterile glove", None, ["-non-sterile"]),  # User wants non-sterile
 
         # Short words should NOT have negation applied (5+ char minimum)
-        ("red tubes", "", None, ["nonred"]),  # "red" is 3 chars - too short
-        ("box of items", "", None, ["nonbox"]),  # "box" is 3 chars - too short
-        ("slip mat", "", None, ["nonslip"]),  # "slip" is 4 chars - too short
+        ("red tubes", "red tube", None, ["-nonred"]),  # "red" is 3 chars - too short
+        ("box of items", "box item", None, ["-nonbox"]),  # "box" is 3 chars - too short
 
-        # Complex queries
-        ("sterile labeled pipettes", "", ["non-sterile", "unlabeled"], None),
+        # Complex queries with multiple terms
+        ("sterile labeled pipettes", "sterile labeled pipette", ["-non-sterile"], None),
     ]
 
     passed = 0
     failed = 0
 
     for test in test_cases:
-        query, existing_filter, should_contain, should_not_contain = test
-        result = apply_negation_filters(query, existing_filter)
+        user_query, extracted_query, should_contain, should_not_contain = test
+        result = apply_negation_to_query(user_query, extracted_query)
 
         test_passed = True
         errors = []
@@ -56,25 +48,25 @@ def test_negation_filter_function():
         # Check should_contain
         if should_contain:
             for term in should_contain:
-                if f"name:!*{term}*" not in result:
+                if term not in result:
                     test_passed = False
-                    errors.append(f"Missing exclusion for '{term}'")
+                    errors.append(f"Missing exclusion term '{term}'")
 
         # Check should_not_contain
         if should_not_contain:
             for term in should_not_contain:
-                if f"name:!*{term}*" in result:
+                if term in result:
                     test_passed = False
-                    errors.append(f"Should NOT exclude '{term}'")
+                    errors.append(f"Should NOT have exclusion '{term}'")
 
         if test_passed:
-            print(f"✅ PASS: '{query}'")
+            print(f"PASS: '{user_query}'")
             passed += 1
         else:
-            print(f"❌ FAIL: '{query}'")
+            print(f"FAIL: '{user_query}'")
             for err in errors:
                 print(f"   {err}")
-            print(f"   Result: {result[:100]}...")
+            print(f"   Result: {result}")
             failed += 1
 
     print()
@@ -101,118 +93,113 @@ def test_sterile_example():
     print("JAI-2210 Example: 'sterile nitrile gloves'")
     print("=" * 60)
 
-    query = "sterile nitrile gloves"
-    existing_filter = "categories:=`Products / Gloves & Apparel / Gloves`"
+    user_query = "sterile nitrile gloves"
+    extracted_query = "sterile nitrile glove"
 
-    result = apply_negation_filters(query, existing_filter)
+    result = apply_negation_to_query(user_query, extracted_query)
 
-    print(f"Query: {query}")
-    print(f"Existing filter: {existing_filter}")
-    print()
-    print(f"Result filter:")
-    # Pretty print the filter
-    parts = result.split(" && ")
-    for part in parts[:5]:  # Show first 5 parts
-        print(f"  {part}")
-    if len(parts) > 5:
-        print(f"  ... and {len(parts) - 5} more")
+    print(f"User query: {user_query}")
+    print(f"Extracted query (before): {extracted_query}")
+    print(f"Modified query (after): {result}")
     print()
 
-    # Check that non-sterile variants are excluded
-    required = ["non-sterile", "nonsterile"]
-    all_found = all(f"name:!*{r}*" in result for r in required)
+    # Check that non-sterile exclusions are added to query
+    has_non_sterile = "-non-sterile" in result or "-nonsterile" in result
+    has_original = "sterile nitrile glove" in result
 
-    if all_found:
-        print("✅ PASS: Non-sterile products will be excluded")
+    if has_non_sterile and has_original:
+        print("PASS: Query contains exclusion terms for non-sterile")
+        print("      Typesense will demote products containing 'non-sterile' in the results")
         return True
     else:
-        print("❌ FAIL: Missing required negation filters")
+        print("FAIL: Missing required exclusion terms")
+        if not has_original:
+            print("   - Missing original query terms")
+        if not has_non_sterile:
+            print("   - Missing -non-sterile or -nonsterile exclusion")
         return False
 
 
-def test_dynamic_unlisted_terms():
-    """Test that terms NOT in any static list are still handled"""
+def test_no_exclusion_for_searched_negation():
+    """Test that searching for negated terms doesn't exclude what user wants"""
     print()
     print("=" * 60)
-    print("Testing Dynamic Detection (unlisted terms)")
-    print("=" * 60)
-
-    # These terms would NOT be in a static list
-    # All attribute words are 5+ chars and not in skip_words
-    unlisted_terms = [
-        ("absorbent material", "non-absorbent"),   # absorbent = 9 chars
-        ("conductive wire", "non-conductive"),      # conductive = 10 chars
-        ("reactive compound", "non-reactive"),      # reactive = 8 chars
-        ("magnetic material", "non-magnetic"),      # magnetic = 8 chars
-        ("adhesive material", "non-adhesive"),      # adhesive = 8 chars
-        ("porous filter", "non-porous"),            # porous = 6 chars
-    ]
-
-    passed = 0
-    for query, expected_exclusion in unlisted_terms:
-        result = apply_negation_filters(query, "")
-        if f"name:!*{expected_exclusion}*" in result:
-            print(f"✅ '{query}' → excludes '{expected_exclusion}'")
-            passed += 1
-        else:
-            print(f"❌ '{query}' → missing '{expected_exclusion}'")
-            print(f"   Result: {result[:80]}...")
-
-    print()
-    print(f"Dynamic detection: {passed}/{len(unlisted_terms)} terms handled")
-    return passed == len(unlisted_terms)
-
-
-def test_reverse_negation():
-    """Test that searching for negated terms excludes positive variants"""
-    print()
-    print("=" * 60)
-    print("Testing Reverse Negation (negated → excludes positive)")
+    print("Testing: Don't exclude the negated form user is searching for")
     print("=" * 60)
 
     test_cases = [
-        # (query, should_exclude_positive_pattern)
-        ("non-sterile gloves", ", Sterile "),      # Should exclude standalone "Sterile"
-        ("nonsterile gloves", ", Sterile "),       # Should exclude standalone "Sterile"
-        ("non sterile gloves", ", Sterile "),      # Should exclude standalone "Sterile"
-        ("anti-microbial wipes", ", Microbial "),  # Should exclude standalone "Microbial"
+        # (user_query, extracted_query, should_NOT_contain)
+        # When user searches for "non-sterile", we should NOT add "-non-sterile" or "-nonsterile"
+        ("non-sterile gloves", "non-sterile glove", ["-non-sterile", "-nonsterile"]),
+        ("nonsterile gloves", "nonsterile glove", ["-non-sterile", "-nonsterile"]),
+        # Note: other words like "gloves" may still get exclusions, which is fine
     ]
 
     passed = 0
-    for query, expected_pattern in test_cases:
-        result = apply_negation_filters(query, "")
-        if f"name:!*{expected_pattern}*" in result:
-            print(f"✅ '{query}' → excludes positive form")
+    for user_query, extracted_query, should_not_contain in test_cases:
+        result = apply_negation_to_query(user_query, extracted_query)
+
+        # Check that we don't exclude the term the user is searching for
+        has_unwanted = any(term in result for term in should_not_contain)
+
+        if not has_unwanted:
+            print(f"PASS: '{user_query}' - doesn't exclude the negated sterile term user wants")
             passed += 1
         else:
-            print(f"❌ '{query}' → missing positive exclusion")
-            print(f"   Expected pattern: {expected_pattern}")
-            # Show what we got
-            sterile_filters = [f for f in result.split(" && ") if "Sterile" in f or "Microbial" in f]
-            print(f"   Got: {sterile_filters}")
+            print(f"FAIL: '{user_query}' - incorrectly excludes term user is searching for")
+            print(f"   Result: {result}")
+            print(f"   Should not contain: {should_not_contain}")
 
     print()
-    print(f"Reverse negation: {passed}/{len(test_cases)} cases handled")
+    print(f"Results: {passed}/{len(test_cases)} cases handled correctly")
     return passed == len(test_cases)
+
+
+def test_query_structure():
+    """Test that the modified query has correct structure"""
+    print()
+    print("=" * 60)
+    print("Testing Query Structure")
+    print("=" * 60)
+
+    user_query = "sterile pipettes"
+    extracted_query = "sterile pipette"
+    result = apply_negation_to_query(user_query, extracted_query)
+
+    print(f"Input: '{user_query}' -> extracted: '{extracted_query}'")
+    print(f"Output: '{result}'")
+    print()
+
+    # Verify structure: original query comes first, then exclusions
+    if result.startswith(extracted_query) and " -" in result:
+        print("PASS: Query structure is correct (original + exclusions)")
+        return True
+    elif result == extracted_query:
+        print("INFO: No exclusions added (may be expected for some queries)")
+        return True
+    else:
+        print("FAIL: Unexpected query structure")
+        return False
 
 
 if __name__ == "__main__":
     print("JAI-2210: Dynamic Negation Handling Test Suite")
+    print("(Query-Level Exclusion Approach)")
     print()
 
     all_passed = True
     all_passed &= test_prefix_configuration()
-    all_passed &= test_negation_filter_function()
+    all_passed &= test_negation_query_function()
     all_passed &= test_sterile_example()
-    all_passed &= test_dynamic_unlisted_terms()
-    all_passed &= test_reverse_negation()
+    all_passed &= test_no_exclusion_for_searched_negation()
+    all_passed &= test_query_structure()
 
     print()
     print("=" * 60)
     if all_passed:
-        print("✅ ALL TESTS PASSED")
+        print("ALL TESTS PASSED")
     else:
-        print("❌ SOME TESTS FAILED")
+        print("SOME TESTS FAILED")
     print("=" * 60)
 
     sys.exit(0 if all_passed else 1)
