@@ -30,10 +30,23 @@ interface SearchStats {
 }
 
 // Helper to strip negation exclusion terms from query for cleaner display
-// These terms (e.g., "-non-sterile -nonsterile") are internal search modifiers
+// Only strips specific patterns that the middleware adds as exclusions
+// Preserves user terms like "powder-free" or "latex-free"
 const stripNegationTerms = (query: string): string => {
   if (!query) return query;
-  return query.split(' ').filter(part => !part.startsWith('-')).join(' ');
+  return query.split(' ').filter(part => {
+    if (!part.startsWith('-')) return true; // Keep non-exclusion terms
+    // Only strip terms matching known exclusion patterns from middleware:
+    // -non-*, -non*, -un*, -anti-*, -anti*, -*-free, -*free
+    const lowerPart = part.toLowerCase();
+    const isNegationExclusion =
+      lowerPart.startsWith('-non') ||
+      lowerPart.startsWith('-un') ||
+      lowerPart.startsWith('-anti') ||
+      lowerPart.endsWith('-free') ||
+      lowerPart.endsWith('free');
+    return !isNegationExclusion;
+  }).join(' ');
 };
 
 // Wrapper component to handle Suspense boundary for useSearchParams
