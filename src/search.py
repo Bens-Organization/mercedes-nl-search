@@ -39,22 +39,6 @@ class Search:
         })
         self.collection_name = Config.TYPESENSE_COLLECTION_NAME
 
-    def _strip_negation_terms(self, query: str) -> str:
-        """
-        Strip negation exclusion terms from query for cleaner user display.
-
-        These terms (e.g., "-non-sterile -nonsterile") are internal search modifiers
-        that help Typesense demote unwanted results, but shouldn't be shown to users.
-
-        Example: "sterile glove -non-sterile -nonsterile" → "sterile glove"
-        """
-        if not query:
-            return query
-        # Split query and keep only parts that don't start with '-'
-        parts = query.split()
-        clean_parts = [p for p in parts if not p.startswith('-')]
-        return ' '.join(clean_parts)
-
     def _detect_size_pattern(self, query: str) -> Optional[Tuple[str, str]]:
         """
         Detect size pattern in query (e.g., "22x22", "24 x 60").
@@ -260,11 +244,7 @@ class Search:
         # Read from parsed_nl_query.augmented_params (contains middleware-processed params)
         if "parsed_nl_query" in result and "augmented_params" in result["parsed_nl_query"]:
             augmented = result["parsed_nl_query"]["augmented_params"]
-            raw_query = augmented.get("q", query)
-            # Strip negation exclusion terms (e.g., "-non-sterile -nonsterile") for cleaner display
-            # These are internal search modifiers, not user-facing
-            display_query = self._strip_negation_terms(raw_query)
-            typesense_query["extracted_query"] = display_query
+            typesense_query["extracted_query"] = augmented.get("q", query)
             typesense_query["filters_applied"] = augmented.get("filter_by", "")
             typesense_query["sort_applied"] = augmented.get("sort_by")
         else:

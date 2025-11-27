@@ -29,6 +29,13 @@ interface SearchStats {
   typesenseQuery: any;
 }
 
+// Helper to strip negation exclusion terms from query for cleaner display
+// These terms (e.g., "-non-sterile -nonsterile") are internal search modifiers
+const stripNegationTerms = (query: string): string => {
+  if (!query) return query;
+  return query.split(' ').filter(part => !part.startsWith('-')).join(' ');
+};
+
 // Wrapper component to handle Suspense boundary for useSearchParams
 export default function Home() {
   return (
@@ -290,8 +297,10 @@ function HomeContent() {
                                   tq.nl_extracted_sort ||
                                   tq.parsed?.sort_by;
 
-            if (extractedQuery && extractedQuery !== query) {
-              parts.push(`"q":"${extractedQuery}"`);
+            // Strip negation terms for cleaner display (they're still used internally)
+            const displayQuery = stripNegationTerms(extractedQuery);
+            if (displayQuery && displayQuery !== query) {
+              parts.push(`"q":"${displayQuery}"`);
             }
 
             if (extractedFilters && extractedFilters !== 'none' && extractedFilters !== '') {
