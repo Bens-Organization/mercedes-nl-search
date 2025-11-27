@@ -145,6 +145,133 @@ def extract_schema_info(messages: List[ChatMessage]) -> Dict[str, Any]:
     return {"system_prompt": "", "has_schema": False}
 
 
+# ============================================================================
+# Negation Handling (JAI-2210)
+# ============================================================================
+
+# Common negation prefixes that change meaning when prepended to a word
+# Example: "sterile" vs "non-sterile", "toxic" vs "non-toxic"
+NEGATION_PREFIXES = [
+    "non-",      # non-sterile, non-toxic
+    "non ",      # non sterile (space variant)
+    "un",        # unsterile, unlabeled
+    "anti-",     # anti-slip, anti-microbial
+    "anti ",     # anti slip (space variant)
+    "in",        # inactive, insoluble (careful - also valid word starts)
+    "a",         # apyrogenic, aseptic (careful - very short prefix)
+]
+
+# Prefixes that are safe to apply broadly (won't cause false positives)
+SAFE_NEGATION_PREFIXES = ["non-", "non ", "anti-", "anti "]
+
+# Prefixes that need the term to be at least N chars to avoid false positives
+# e.g., "un" + "sterile" = "unsterile" (valid), but "un" + "it" = "unit" (false positive)
+SHORT_PREFIX_MIN_TERM_LENGTH = {
+    "un": 5,     # unsterile (7 chars term "sterile" >= 5) ✓, unit (2 chars "it" < 5) ✗
+    "in": 6,     # insoluble (7 chars term "soluble" >= 6) ✓, ink (1 char "k" < 6) ✗
+    "a": 7,      # apyrogenic (9 chars term "pyrogenic" >= 7) ✓, acid (3 chars "cid" < 7) ✗
+}
+
+
+def apply_negation_filters(user_query: str, filter_by: str) -> str:
+    """
+    Dynamically apply negation filters for any term in the query.
+
+    Handles BOTH directions:
+    1. "sterile" → exclude "non-sterile", "nonsterile" (user wants positive)
+    2. "non-sterile" → exclude standalone "sterile" (user wants negated)
+
+    Args:
+        user_query: Original user query
+        filter_by: Existing filter_by string
+
+    Returns:
+        Updated filter_by with negation exclusions
+    """
+    query_lower = user_query.lower()
+    # Extract words that are 5+ chars (meaningful attribute words that can have negations)
+    words = re.findall(r'\b[a-z]{5,}\b', query_lower)
+    negation_filters = []
+    applied_terms = []
+    reverse_applied_terms = []
+
+    # PART 1: Handle positive term searches (e.g., "sterile" → exclude "non-sterile")
+    for word in words:
+        # Check if user is already searching for a negated form
+        is_searching_negated = any(
+            f"{prefix}{word}" in query_lower or f"{prefix.strip()}{word}" in query_lower
+            for prefix in SAFE_NEGATION_PREFIXES
+        )
+
+        if is_searching_negated:
+            # User wants the negated form, don't exclude it
+            continue
+
+        # Generate negation variants for this word
+        negated_forms = []
+
+        # Safe prefixes - apply to all qualifying words
+        for prefix in SAFE_NEGATION_PREFIXES:
+            negated_forms.append(f"{prefix.replace(' ', '')}{word}")  # nonsterile
+            negated_forms.append(f"{prefix.strip()}-{word}")  # non-sterile
+            if ' ' in prefix:
+                negated_forms.append(f"{prefix}{word}")  # non sterile
+
+        # Short prefixes - only apply if word is long enough
+        for prefix, min_len in SHORT_PREFIX_MIN_TERM_LENGTH.items():
+            if len(word) >= min_len:
+                negated_forms.append(f"{prefix}{word}")  # unsterile, apyrogenic
+
+        # Add exclusion filters for each negated form
+        for neg_form in negated_forms:
+            negation_filters.append(f"name:!*{neg_form}*")
+
+        if negated_forms:
+            applied_terms.append(word)
+
+    # PART 2: Handle negated term searches (e.g., "non-sterile" → exclude standalone "sterile")
+    # Detect patterns like "non-sterile", "nonsterile", "non sterile" in the query
+    for prefix in SAFE_NEGATION_PREFIXES:
+        prefix_clean = prefix.strip().rstrip('-')  # "non-" → "non", "non " → "non"
+
+        # Find negated terms in query: "non-sterile", "nonsterile", "non sterile"
+        patterns = [
+            rf'{prefix_clean}-([a-z]{{5,}})',   # non-sterile
+            rf'{prefix_clean}([a-z]{{5,}})',    # nonsterile
+            rf'{prefix_clean} ([a-z]{{5,}})',   # non sterile
+        ]
+
+        for pattern in patterns:
+            matches = re.findall(pattern, query_lower)
+            for base_word in matches:
+                if base_word and len(base_word) >= 5:
+                    # User is searching for negated form, exclude the positive form
+                    # Exclude " sterile " (with word boundaries via spaces/punctuation)
+                    # This excludes "Sterile Gloves" but keeps "Non-Sterile Gloves"
+                    negation_filters.append(f"name:!*, {base_word.capitalize()} *")
+                    negation_filters.append(f"name:!*, {base_word.capitalize()},*")
+                    negation_filters.append(f"name:!*({base_word.capitalize()})*")
+                    reverse_applied_terms.append(f"{prefix_clean}-{base_word}")
+
+    if negation_filters:
+        # Use unique filters only
+        unique_filters = list(set(negation_filters))
+        negation_clause = " && ".join(unique_filters)
+
+        if applied_terms:
+            print(f"[NEGATION] Positive terms: {applied_terms} → excluding negated variants")
+        if reverse_applied_terms:
+            print(f"[NEGATION] Negated terms: {reverse_applied_terms} → excluding positive variants")
+        print(f"[NEGATION] Total {len(unique_filters)} exclusion filters")
+
+        if filter_by:
+            return f"{filter_by} && {negation_clause}"
+        else:
+            return negation_clause
+
+    return filter_by
+
+
 def extract_product_type_fast(query: str) -> str:
     """
     Fast, zero-latency extraction of core product type from query.
@@ -950,6 +1077,15 @@ def apply_category_filter(openai_response: Dict[str, Any], confidence_threshold:
             # Default: in-stock priority, brand priority (Typesense handles relevance automatically)
             params["sort_by"] = "in_stock_priority:desc,brand_priority:desc"
             print(f"[SORT] Applied default stock-aware brand priority sorting")
+
+        # Apply negation filters (JAI-2210: "sterile" should not return "Non-Sterile")
+        # This must be done AFTER category filter to combine properly
+        if user_query:
+            current_filter = params.get("filter_by", "")
+            updated_filter = apply_negation_filters(user_query, current_filter)
+            if updated_filter != current_filter:
+                params["filter_by"] = updated_filter
+                print(f"[NEGATION] Applied negation filters: {updated_filter}")
 
         # Remove empty string fields (Typesense prefers omitted fields over empty strings)
         if params.get("sort_by") == "":
