@@ -183,7 +183,12 @@ def apply_negation_to_query(user_query: str, extracted_query: str) -> str:
     Instead, we add exclusion terms to the query itself using the '-term' syntax,
     which tells Typesense to demote (not hard-exclude) documents containing those terms.
 
-    Example: "sterile gloves" → "sterile gloves -non-sterile -nonsterile"
+    TARGETED APPROACH: Only apply to attribute words that commonly have negated variants
+    in product catalogs (sterile, latex, powdered, coated, etc.)
+    NOT applied to product type words (gloves, slides, pipettes) - those don't have
+    meaningful negations like "non-gloves" or "anti-slides".
+
+    Example: "sterile gloves" → "sterile glove -non-sterile -nonsterile"
 
     Args:
         user_query: Original user query
@@ -193,51 +198,49 @@ def apply_negation_to_query(user_query: str, extracted_query: str) -> str:
         Modified query with negation terms added
     """
     query_lower = user_query.lower()
-    # Extract words that are 5+ chars (meaningful attribute words that can have negations)
-    words = re.findall(r'\b[a-z]{5,}\b', query_lower)
+
+    # TARGETED: Only these attribute words commonly have meaningful negations in product data
+    # Product types (gloves, slides, pipettes) do NOT have meaningful negations
+    NEGATABLE_ATTRIBUTES = {
+        # Sterility attributes
+        "sterile": ["-non-sterile", "-nonsterile"],
+        # Material attributes
+        "latex": ["-non-latex", "-latex-free", "-latexfree"],
+        # Powder attributes
+        "powdered": ["-powder-free", "-powderfree"],
+        "powder": ["-powder-free", "-powderfree"],
+        # Surface attributes
+        "coated": ["-non-coated", "-noncoated", "-uncoated"],
+        # Filter attributes
+        "filtered": ["-non-filtered", "-nonfiltered", "-unfiltered"],
+        # Adhesive attributes
+        "adhesive": ["-non-adhesive", "-nonadhesive"],
+        # Reactive attributes
+        "reactive": ["-non-reactive", "-nonreactive"],
+    }
+
     exclusion_terms = []
     applied_terms = []
 
-    # Negation prefixes (without trailing hyphens/spaces for checking)
-    negation_prefixes_clean = ["non", "anti", "un", "in", "a"]
+    for attribute, negations in NEGATABLE_ATTRIBUTES.items():
+        # Check if attribute is in the query as a word (not part of another word)
+        if re.search(rf'\b{attribute}\b', query_lower):
+            # Check if user is already searching for a negated form
+            query_normalized = query_lower.replace("-", "").replace(" ", "")
+            is_searching_negated = any(
+                neg.replace("-", "") in query_normalized
+                for neg in negations
+            )
 
-    for word in words:
-        # Check if this word itself starts with a negation prefix (e.g., "nonsterile")
-        word_is_already_negated = any(
-            word.startswith(prefix) and len(word) > len(prefix) + 3
-            for prefix in negation_prefixes_clean
-        )
-
-        # Check if user is searching for a negated form of this word in the query
-        # e.g., "non-sterile" or "non sterile" when word is "sterile"
-        is_searching_negated = any(
-            f"{prefix}{word}" in query_lower or f"{prefix.strip()}{word}" in query_lower
-            for prefix in SAFE_NEGATION_PREFIXES
-        )
-
-        if word_is_already_negated or is_searching_negated:
-            # User wants the negated form, don't exclude it
-            continue
-
-        # Add negation terms to demote in search results
-        # Using -term syntax in Typesense query
-        # Only use non- and anti- prefixes (most common negations)
-        exclusion_terms.append(f"-non-{word}")    # -non-sterile
-        exclusion_terms.append(f"-non{word}")     # -nonsterile
-        exclusion_terms.append(f"-anti-{word}")   # -anti-sterile
-        exclusion_terms.append(f"-anti{word}")    # -antisterile
-
-        applied_terms.append(word)
+            if not is_searching_negated:
+                exclusion_terms.extend(negations)
+                applied_terms.append(attribute)
 
     if exclusion_terms and applied_terms:
-        # Deduplicate exclusions
-        unique_exclusions = list(set(exclusion_terms))
-
-        if unique_exclusions:
-            modified_query = f"{extracted_query} {' '.join(unique_exclusions)}"
-            print(f"[NEGATION] Added query exclusions for terms: {applied_terms}")
-            print(f"[NEGATION] Modified query: {modified_query}")
-            return modified_query
+        modified_query = f"{extracted_query} {' '.join(exclusion_terms)}"
+        print(f"[NEGATION] Attribute terms found: {applied_terms}")
+        print(f"[NEGATION] Exclusions added: {exclusion_terms}")
+        return modified_query
 
     return extracted_query
 
