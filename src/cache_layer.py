@@ -317,6 +317,7 @@ class CacheLayer:
             import asyncio
             import re
             from langcache import LangCache
+            from langcache.models import SearchStrategy
 
             # Detect queries with filters using static patterns (defined at module level)
             # Filter queries use exact matching to prevent "$50" matching "$6"
@@ -337,13 +338,20 @@ class CacheLayer:
                     api_key=LANGCACHE_API_KEY
                 ) as lang_cache:
                     if has_filters:
-                        # Filter query: use exact matching
+                        # Filter query: use EXACT strategy only
                         # "gloves under $50" won't match "gloves under $6"
-                        result = lang_cache.search(prompt=query, exact_match=True)
+                        # "sterile gloves" won't match "non-sterile gloves"
+                        result = lang_cache.search(
+                            prompt=query,
+                            search_strategies=[SearchStrategy.EXACT]
+                        )
                     else:
-                        # Simple query: use semantic matching
+                        # Simple query: use both EXACT and SEMANTIC strategies
                         # "nitrile gloves" can match "nitrile glove" or "NBR gloves"
-                        result = lang_cache.search(prompt=query)
+                        result = lang_cache.search(
+                            prompt=query,
+                            search_strategies=[SearchStrategy.EXACT, SearchStrategy.SEMANTIC]
+                        )
                     return result
 
             # Run SDK call in thread pool (SDK is sync, we're async)
